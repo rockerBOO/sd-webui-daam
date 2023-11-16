@@ -8,6 +8,7 @@ import gradio as gr
 import numpy as np
 import modules.scripts as scripts
 from modules import devices
+from modules.images import get_font
 import torch
 from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 import open_clip.tokenizer
@@ -18,7 +19,7 @@ from modules.processing import (
 )
 from modules.shared import opts
 import modules.shared as shared
-from PIL import Image
+from PIL import Image, ImageDraw
 from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 from modules.sd_hijack_clip import (
     FrozenCLIPEmbedderWithCustomWordsBase,
@@ -193,18 +194,15 @@ class Script(scripts.Script):
         fix_seed(p)
 
     def get_tokenizer(self, p):
-        return p.sd_model.cond_stage_model.wrapped.tokenizer
+        if isinstance(p.sd_model.cond_stage_model.wrapped, FrozenOpenCLIPEmbedder):
+            return Tokenizer(open_clip.tokenizer._tokenizer.encode)
+
+        return Tokenizer(clip.tokenizer.tokenize)
 
     def tokenize(self, p, prompt):
         tokenizer = self.get_tokenizer(p)
 
-        if isinstance(tokenizer, CLIPTokenizer):
-            return tokenizer.tokenize(prompt)
-
-        if isinstance(tokenizer, FrozenOpenCLIPEmbedder):
-            return tokenizer._tokenizer.encode(prompt)
-
-        assert False == "Invalid tokenizer"
+        return tokenizer.tokenize(prompt)
 
     def get_context_size(self, p: StableDiffusionProcessing, prompt: str):
         embedder = None
@@ -354,7 +352,7 @@ class Script(scripts.Script):
             except RuntimeError as e:
                 self.error(e, "Could not unhook")
 
-        self.tracers = None
+        self.tracers = []
 
         initial_info = None
 
@@ -440,13 +438,13 @@ class Script(scripts.Script):
             print(f"DAAM: Invalid batch size")
             return
 
-        if self.tracers is None:
+        if len(self.tracers) == 0:
             print("DAAM: No tracers to heatmap")
 
         if len(self.attentions) == 0:
             print("DAAM: No attentions to heamap")
 
-        if self.tracers is None or len(self.attentions) < 1:
+        if len(self.tracers) == 0 or len(self.attentions) < 1:
             return
 
         for i, tracer in enumerate(self.tracers):
@@ -572,6 +570,15 @@ def handle_before_image_saved(params: script_callbacks.ImageSaveParams):
 script_callbacks.on_before_image_saved(handle_before_image_saved)
 
 
+# Emulating hugging face tokenizer
+class Tokenizer:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def tokenize(self, prompt):
+        return self.tokenizer(prompt)
+
+
 def overlay_heat_map(
     im, heat_map, word=None, out_file=None, crop=None, color_normalize=True
 ):
@@ -666,39 +673,30 @@ def _convert_heat_map_colors(heat_map: torch.Tensor):
     return color_map[heat_map]
 
 
-from PIL import Image, ImageFont, ImageDraw
-
-# from fonts.ttf import Roboto
-
-
-def _write_on_image(img, caption, font_size=32):
+def _write_on_image(img, caption, fontsize=32):
     ix, iy = img.size
     draw = ImageDraw.Draw(img)
     margin = 2
-    fontsize = font_size
     draw = ImageDraw.Draw(img)
     # font = ImageFont.truetype(Roboto, fontsize)
+
+    font = get_font(fontsize)
     text_height = iy - 60
-    # tx = draw.textbbox((0, 0), caption, font)
-    tx = draw.textbbox((0, 0), caption)
-    # draw.text(
-    #     (int((ix - tx[2]) / 2), text_height + margin), caption, (0, 0, 0), font=font
-    # )
-    # draw.text(
-    #     (int((ix - tx[2]) / 2), text_height - margin), caption, (0, 0, 0), font=font
-    # )
-    # draw.text(
-    #     (int((ix - tx[2]) / 2 + margin), text_height), caption, (0, 0, 0), font=font
-    # )
-    # draw.text(
-    #     (int((ix - tx[2]) / 2 - margin), text_height), caption, (0, 0, 0), font=font
-    # )
-    # draw.text((int((ix - tx[2]) / 2), text_height), caption, (255, 255, 255), font=font)
-    draw.text((int((ix - tx[2]) / 2), text_height + margin), caption, (0, 0, 0))
-    draw.text((int((ix - tx[2]) / 2), text_height - margin), caption, (0, 0, 0))
-    draw.text((int((ix - tx[2]) / 2 + margin), text_height), caption, (0, 0, 0))
-    draw.text((int((ix - tx[2]) / 2 - margin), text_height), caption, (0, 0, 0))
-    draw.text((int((ix - tx[2]) / 2), text_height), caption, (255, 255, 255))
+    tx = draw.textbbox((0, 0), caption, font)
+    draw.text(
+        (int((ix - tx[2]) / 2), text_height + margin), caption, (0, 0, 0), font=font
+    )
+    draw.text(
+        (int((ix - tx[2]) / 2), text_height - margin), caption, (0, 0, 0), font=font
+    )
+    draw.text(
+        (int((ix - tx[2]) / 2 + margin), text_height), caption, (0, 0, 0), font=font
+    )
+    draw.text(
+        (int((ix - tx[2]) / 2 - margin), text_height), caption, (0, 0, 0), font=font
+    )
+    draw.text((int((ix - tx[2]) / 2), text_height), caption, (255, 255, 255), font=font)
+
     return img
 
 
