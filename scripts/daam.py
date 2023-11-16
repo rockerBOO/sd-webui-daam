@@ -81,10 +81,6 @@ class Script(scripts.Script):
         global before_image_saved_handler
         before_image_saved_handler = lambda params: self.before_image_saved(params)
 
-        print(p.sd_model)
-
-        print("run!")
-
     def ui(self, is_img2img):
         with gr.Group():
             with gr.Accordion("Attention Heatmap", open=False):
@@ -143,10 +139,6 @@ class Script(scripts.Script):
                         label="Use layers as row instead of Batch Length", value=False
                     )
 
-        self.tracers = None
-
-        print(f"ui attetnion texts {attention_texts}")
-
         return [
             attention_texts,
             hide_images,
@@ -177,9 +169,9 @@ class Script(scripts.Script):
     ):
         self.enabled = False  # in case the assert fails
 
-        print("DAAM Process...")
+        self.debug("DAAM Process...")
 
-        print(f"attention text {attention_texts}")
+        self.debug(f"attention text {attention_texts}")
         assert (
             opts.samples_save
         ), "Cannot run Daam script. Enable 'Always save all generated images' setting."
@@ -205,8 +197,6 @@ class Script(scripts.Script):
     def tokenize(self, p, prompt):
         tokenizer = self.get_tokenizer(p)
 
-        print(tokenizer)
-
         if isinstance(tokenizer, CLIPTokenizer):
             return tokenizer.tokenize(prompt)
 
@@ -231,7 +221,7 @@ class Script(scripts.Script):
             ), f"Embedder '{type(p.sd_model.cond_stage_model)}' is not supported."
 
         tokens = self.tokenize(p, escape_prompt(prompt))
-        print(f"DAAM tokens: {tokens}")
+        self.debug(f"DAAM tokens: {tokens}")
         context_size = calc_context_size(len(tokens))
 
         prompt_analyzer = PromptAnalyzer(embedder, prompt)
@@ -268,58 +258,16 @@ class Script(scripts.Script):
         prompts,
         **kwargs,
     ):
-        print("DAAM Process batch")
+        self.debug("Process batch")
         if not self.enabled:
-            print("DAAM not enabled")
+            self.debug("not enabled")
             return
 
-        print("DAAM Processing batch...")
+        self.debug("Processing batch...")
 
         styled_prompt = prompts[0]
 
         context_size = self.get_context_size(p, styled_prompt)
-
-        # embedder = None
-        # if (
-        #     type(p.sd_model.cond_stage_model)
-        #     == sd_hijack_clip.FrozenCLIPEmbedderWithCustomWords
-        #     or type(p.sd_model.cond_stage_model)
-        #     == sd_hijack_open_clip.FrozenOpenCLIPEmbedderWithCustomWords
-        # ):
-        #     embedder = p.sd_model.cond_stage_model
-        # else:
-        #     assert (
-        #         False
-        #     ), f"Embedder '{type(p.sd_model.cond_stage_model)}' is not supported."
-
-        # clip = None
-        # tokenize = None
-        # if type(p.sd_model.cond_stage_model.wrapped) == FrozenCLIPEmbedder:
-        #     clip: FrozenCLIPEmbedder = p.sd_model.cond_stage_model.wrapped
-        #     tokenize = clip.tokenizer.tokenize
-        # elif type(p.sd_model.cond_stage_model.wrapped) == FrozenOpenCLIPEmbedder:
-        #     clip: FrozenOpenCLIPEmbedder = p.sd_model.cond_stage_model.wrapped
-        #     tokenize = open_clip.tokenizer._tokenizer.encode
-        # else:
-        #     assert False
-        #
-        # tokens = tokenize(utils.escape_prompt(styled_prompt))
-        # context_size = utils.calc_context_size(len(tokens))
-        #
-        # prompt_analyzer = utils.PromptAnalyzer(embedder, styled_prompt)
-        # self.prompt_analyzer = prompt_analyzer
-        # context_size = prompt_analyzer.context_size
-        #
-        # print(
-        #     f"daam run with context_size={prompt_analyzer.context_size}, token_count={prompt_analyzer.token_count}"
-        # )
-        # print(
-        #     f"remade_tokens={prompt_analyzer.tokens}, multipliers={prompt_analyzer.multipliers}"
-        # )
-        # print(
-        #     f"hijack_comments={prompt_analyzer.hijack_comments}, used_custom_terms={prompt_analyzer.used_custom_terms}"
-        # )
-        # print(f"fixes={prompt_analyzer.fixes}")
 
         if any(
             item[0] in self.attentions
@@ -330,8 +278,7 @@ class Script(scripts.Script):
         global before_image_saved_handler
         before_image_saved_handler = lambda params: self.before_image_saved(params)
 
-        if Script.DEBUG:
-            print("Set before_image_saved_handler to self.before_image_saved")
+        self.debug("Set before_image_saved_handler to self.before_image_saved")
 
         tokenizer = self.get_tokenizer(p)
 
@@ -348,7 +295,7 @@ class Script(scripts.Script):
                     width=p.height,
                     height=p.width,
                     context_size=context_size,
-                    layer_idx=i,
+                    layer_idx={i},
                     sample_size=64,  # Update to proper sample size (using 1.5 here)
                     image_processor=to_pil_image,
                 )
@@ -395,13 +342,17 @@ class Script(scripts.Script):
         layers_as_row: bool,
         **kwargs,
     ):
-        print("DAAM postprocess...")
+        self.debug("DAAM: postprocess...")
         if self.enabled == False:
-            print("DAAM disabled...")
+            self.debug("DAAM: disabled...")
             return
 
-        # for trace in self.tracers:
-        #     trace.unhook()
+        for trace in self.tracers:
+            try:
+                trace.unhook()
+            except RuntimeError as e:
+                self.error(e, "Could not unhook")
+
         self.tracers = None
 
         initial_info = None
@@ -415,7 +366,7 @@ class Script(scripts.Script):
         before_image_saved_handler = None
 
         if Script.DEBUG:
-            print("Disabled before_image_saved_handler")
+            print("DAAM: Disabled before_image_saved_handler")
 
         if layers_as_row:
             images_list = []
@@ -504,13 +455,13 @@ class Script(scripts.Script):
             # try:
             try:
                 global_heat_map = tracer.compute_global_heat_map(
-                    styled_prompt, batch_po.squeeze(1).squeeze(1)
+                    styled_prompt, batch_pos
                 )
             except RuntimeError as err:
-                print(f"Error: {err}")
-                print(
+                self.error(
+                    err,
                     f"DAAM: Failed to get computed global heatmap at"
-                    + f" {batch_pos} for {styled_prompt}"
+                    + f" {batch_pos} for {styled_prompt}",
                 )
                 continue
 
@@ -567,7 +518,7 @@ class Script(scripts.Script):
             self.heatmap_images[i] += heatmap_images
 
         if len(self.heatmap_images) == 0:
-            print("Did not create any heatmap images.")
+            self.log("DAAM: Did not create any heatmap images.")
 
         self.heatmap_images = {
             j: self.heatmap_images[j]
@@ -583,16 +534,24 @@ class Script(scripts.Script):
         global before_image_saved_handler
         before_image_saved_handler = None
 
-        if Script.DEBUG:
-            print("Disabled inside before_image_saved_handler")
+        self.debug("Disabled inside before_image_saved_handler")
 
         return
 
+    def debug(self, message):
+        print(f"DAAM Debug: {message}")
+
+    def log(self, message):
+        print(f"DAAM: {message}")
+
+    def error(self, err, message):
+        print(f"DAAM: {message}")
+
     def __getattr__(self, attr):
         print("unknown call", attr)
-        if attr not in self.__dict__:
-            return getattr(self.obj, attr)
-        return super().__getattr__(attr)
+        # if attr not in self.__dict__:
+        #     return getattr(self.obj, attr)
+        # return super().__getattr__(attr)
 
 
 def handle_before_image_saved(params: script_callbacks.ImageSaveParams):
