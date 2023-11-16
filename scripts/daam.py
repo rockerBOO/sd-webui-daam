@@ -10,7 +10,7 @@ import modules.scripts as scripts
 from modules import devices
 from modules.images import get_font
 import torch
-from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
+from ldm.modules.encoders.modules import FrozenOpenCLIPEmbedder
 import open_clip.tokenizer
 from modules import script_callbacks, sd_hijack_clip, sd_hijack_open_clip
 from modules.processing import (
@@ -20,32 +20,15 @@ from modules.processing import (
 from modules.shared import opts
 import modules.shared as shared
 from PIL import Image, ImageDraw
-from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 from modules.sd_hijack_clip import (
     FrozenCLIPEmbedderWithCustomWordsBase,
-    FrozenCLIPEmbedderWithCustomWords,
 )
 from modules.sd_hijack_open_clip import FrozenOpenCLIPEmbedderWithCustomWords
-from transformers import CLIPTokenizer
 from transformers.image_transforms import to_pil_image
 from matplotlib import cm
-from matplotlib import pyplot as plt
-from daam import trace, utils
+from daam import trace
 
 before_image_saved_handler = None
-
-
-def escape_prompt(prompt):
-    if type(prompt) is str:
-        prompt = prompt.lower()
-        prompt = re.sub(r"[\(\)\[\]]", "", prompt)
-        prompt = re.sub(r":\d+\.*\d*", "", prompt)
-        return prompt
-    elif type(prompt) is list:
-        prompt_new = []
-        for i in range(len(prompt)):
-            prompt_new.append(escape_prompt(prompt[i]))
-        return prompt_new
 
 
 class Script(scripts.Script):
@@ -453,9 +436,7 @@ class Script(scripts.Script):
             )
             # try:
             try:
-                global_heat_map = tracer.compute_global_heat_map(
-                    styled_prompt
-                )
+                global_heat_map = tracer.compute_global_heat_map(styled_prompt)
             except RuntimeError as err:
                 self.error(
                     err,
@@ -484,18 +465,13 @@ class Script(scripts.Script):
                 if word_heatmap is None:
                     print(f"No heatmaps for '{attention}'")
 
-     
                 word_heatmap.plot_overlay(params.image, f"test-{caption}.png")
 
-                print("word heatmap", word_heatmap.heatmap.size())
-                print("params image", params.image.size)
                 heatmap_img = (
                     word_heatmap.expand_as(params.image)
                     if word_heatmap is not None
                     else None
                 )
-
-                print("heatmap_img", heatmap_img.size())
 
                 img: Image.Image = image_overlay_heat_map(
                     params.image,
@@ -582,46 +558,6 @@ class Tokenizer:
         return self.tokenizer(prompt)
 
 
-def overlay_heat_map(
-    im, heat_map, word=None, out_file=None, crop=None, color_normalize=True
-):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
-
-    with devices.without_autocast():
-        im = np.array(im)
-
-        heat_map = heat_map.permute(1, 0)  # swap width/height
-        # heat_map shape width, height
-        if crop is not None:
-            heat_map = heat_map.squeeze()[crop:-crop, crop:-crop]
-            im = im[crop:-crop, crop:-crop]
-
-        # if color_normalize:
-        #     plt.imshow(heat_map.squeeze().cpu().numpy(), cmap="jet")
-        # else:
-        #     heat_map = heat_map.clamp_(min=0, max=1)
-        #     plt.imshow(
-        #         heat_map.squeeze().cpu().numpy(), cmap="jet", vmin=0.0, vmax=1.0
-        #     )
-
-        im = torch.from_numpy(im).float() / 255
-        im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
-
-        # return plt.imshow(im)
-        # print(im.permute(2, 0, 1).size())
-        return to_pil_image(im.permute(2, 1, 0))
-        # plt_.imshow(im)
-        #
-        # if word is not None:
-        #     if ax is None:
-        #         plt.title(word)
-        #     else:
-        #         ax.set_title(word)
-        #
-        # if out_file is not None:
-        #     plt.savefig(out_file)
-
-
 @torch.no_grad()
 def image_overlay_heat_map(
     img: Union[Image.Image, np.nparray],
@@ -639,33 +575,10 @@ def image_overlay_heat_map(
     with devices.without_autocast():
         if heatmap is not None:
             shape: torch.Size = heatmap.shape
-            print("heatmap shape", shape)
-            print("img shape", img.size)
-
-            # OLDER
-            heatmap = _convert_heat_map_colors(heatmap.permute(1, 0))
+            heatmap = heatmap.permute(1, 0)  # flip width / height
+            heatmap = _convert_heat_map_colors()
             heatmap = heatmap.float().detach().numpy().copy().astype(np.uint8)
             heatmap_img = to_pil_image(heatmap)
-
-            # im = np.array(img)
-            #
-            # heatmap = heatmap.permute(1, 0)  # swap width/height
-            #
-            # plt.imshow(heatmap.squeeze().cpu().numpy(), cmap="jet")
-            #
-            # im = torch.from_numpy(im).float() / 255
-            # im = torch.cat((im, (1 - heatmap.unsqueeze(-1))), dim=-1)
-            #
-            # plt.imshow(im)
-            #
-            # if caption is not None:
-            #     plt.title(caption)
-            #
-            # plt.savefig(f'test-{caption}.png')
-            #
-            # # print(img, heatmap_img)
-            #
-            # img = img.copy()
             img = Image.blend(img, heatmap_img, alpha)
         else:
             img = img.copy()
@@ -723,6 +636,19 @@ def _write_on_image(img, caption, fontsize=32):
 def calc_context_size(token_length: int):
     len_check = 0 if (token_length - 1) < 0 else token_length - 1
     return ((int)(len_check // 75) + 1) * 77
+
+
+def escape_prompt(prompt):
+    if type(prompt) is str:
+        prompt = prompt.lower()
+        prompt = re.sub(r"[\(\)\[\]]", "", prompt)
+        prompt = re.sub(r":\d+\.*\d*", "", prompt)
+        return prompt
+    elif type(prompt) is list:
+        prompt_new = []
+        for i in range(len(prompt)):
+            prompt_new.append(escape_prompt(prompt[i]))
+        return prompt_new
 
 
 class PromptAnalyzer:
