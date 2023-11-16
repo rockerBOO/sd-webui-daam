@@ -197,7 +197,7 @@ class Script(scripts.Script):
         if isinstance(p.sd_model.cond_stage_model.wrapped, FrozenOpenCLIPEmbedder):
             return Tokenizer(open_clip.tokenizer._tokenizer.encode)
 
-        return Tokenizer(clip.tokenizer.tokenize)
+        return Tokenizer(p.sd_model.cond_stage_model.wrapped.tokenizer.tokenize)
 
     def tokenize(self, p, prompt):
         tokenizer = self.get_tokenizer(p)
@@ -454,7 +454,7 @@ class Script(scripts.Script):
             # try:
             try:
                 global_heat_map = tracer.compute_global_heat_map(
-                    styled_prompt, batch_pos
+                    styled_prompt
                 )
             except RuntimeError as err:
                 self.error(
@@ -484,6 +484,9 @@ class Script(scripts.Script):
                 if word_heatmap is None:
                     print(f"No heatmaps for '{attention}'")
 
+     
+                word_heatmap.plot_overlay(params.image, f"test-{caption}.png")
+
                 print("word heatmap", word_heatmap.heatmap.size())
                 print("params image", params.image.size)
                 heatmap_img = (
@@ -491,7 +494,9 @@ class Script(scripts.Script):
                     if word_heatmap is not None
                     else None
                 )
+
                 print("heatmap_img", heatmap_img.size())
+
                 img: Image.Image = image_overlay_heat_map(
                     params.image,
                     heatmap_img,
@@ -499,9 +504,7 @@ class Script(scripts.Script):
                     caption=caption,
                     image_scale=self.heatmap_image_scale,
                 )
-                # img = overlay_heat_map(params.image, heat_map_img, word=caption)
-                # print(heat_map_img)
-                # img = to_pil_image(heat_map_img)
+                # img = overlay_heat_map(params.image, heatmap_img, word=caption)
 
                 fullfn_without_extension, extension = os.path.splitext(params.filename)
                 full_filename = (
@@ -605,8 +608,8 @@ def overlay_heat_map(
         im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
 
         # return plt.imshow(im)
-        print(im.permute(2, 0, 1).size())
-        return to_pil_image(im.permute(2, 0, 1))
+        # print(im.permute(2, 0, 1).size())
+        return to_pil_image(im.permute(2, 1, 0))
         # plt_.imshow(im)
         #
         # if word is not None:
@@ -638,14 +641,31 @@ def image_overlay_heat_map(
             shape: torch.Size = heatmap.shape
             print("heatmap shape", shape)
             print("img shape", img.size)
+
+            # OLDER
             heatmap = _convert_heat_map_colors(heatmap.permute(1, 0))
             heatmap = heatmap.float().detach().numpy().copy().astype(np.uint8)
             heatmap_img = to_pil_image(heatmap)
 
-            # heatmap_img = Image.fromarray(heatmap)
-
-            print(img, heatmap_img)
-
+            # im = np.array(img)
+            #
+            # heatmap = heatmap.permute(1, 0)  # swap width/height
+            #
+            # plt.imshow(heatmap.squeeze().cpu().numpy(), cmap="jet")
+            #
+            # im = torch.from_numpy(im).float() / 255
+            # im = torch.cat((im, (1 - heatmap.unsqueeze(-1))), dim=-1)
+            #
+            # plt.imshow(im)
+            #
+            # if caption is not None:
+            #     plt.title(caption)
+            #
+            # plt.savefig(f'test-{caption}.png')
+            #
+            # # print(img, heatmap_img)
+            #
+            # img = img.copy()
             img = Image.blend(img, heatmap_img, alpha)
         else:
             img = img.copy()
