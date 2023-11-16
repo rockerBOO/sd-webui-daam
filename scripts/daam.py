@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 from itertools import chain
+from typing import Union
 
 import gradio as gr
 import numpy as np
@@ -292,8 +293,8 @@ class Script(scripts.Script):
                     vae=p.sd_model.first_stage_model,
                     vae_scale_factor=8,
                     tokenizer=tokenizer,
-                    width=p.height,
-                    height=p.width,
+                    width=p.width,
+                    height=p.height,
                     context_size=context_size,
                     layer_idx={i},
                     sample_size=64,  # Update to proper sample size (using 1.5 here)
@@ -313,8 +314,8 @@ class Script(scripts.Script):
                     vae=p.sd_model.first_stage_model,
                     vae_scale_factor=8,
                     tokenizer=tokenizer,
-                    width=p.height,
-                    height=p.width,
+                    width=p.width,
+                    height=p.height,
                     context_size=context_size,
                     sample_size=64,  # Update to proper sample size (using 1.5 here)
                     image_processor=to_pil_image,
@@ -481,16 +482,21 @@ class Script(scripts.Script):
                     else None
                 )
 
-                heat_map = global_heat_map.compute_word_heat_map(attention)
-                if heat_map is None:
+                word_heatmap = global_heat_map.compute_word_heat_map(attention)
+                if word_heatmap is None:
                     print(f"No heatmaps for '{attention}'")
 
-                heat_map_img = (
-                    heat_map.expand_as(params.image) if heat_map is not None else None
+                print("word heatmap", word_heatmap.heatmap.size())
+                print("params image", params.image.size)
+                heatmap_img = (
+                    word_heatmap.expand_as(params.image)
+                    if word_heatmap is not None
+                    else None
                 )
+                print("heatmap_img", heatmap_img.size())
                 img: Image.Image = image_overlay_heat_map(
                     params.image,
-                    heat_map_img,
+                    heatmap_img,
                     alpha=self.alpha,
                     caption=caption,
                     image_scale=self.heatmap_image_scale,
@@ -606,9 +612,10 @@ def overlay_heat_map(
         #     plt.savefig(out_file)
 
 
+@torch.no_grad()
 def image_overlay_heat_map(
-    img,
-    heat_map,
+    img: Union[Image.Image, np.nparray],
+    heatmap: torch.Tensor,
     word=None,
     out_file=None,
     crop=None,
@@ -619,32 +626,30 @@ def image_overlay_heat_map(
     # type: (Image.Image | np.ndarray, torch.Tensor, str, Path, int, float, str, float) -> Image.Image
     assert img is not None
 
-    if heat_map is not None:
-        shape: torch.Size = heat_map.shape
-        print("heatmap shape", shape)
-        # heat_map = heat_map.unsqueeze(0).expand(3, shape[0], shape[1]).permute(0, 2, 1).clone()
-        print("img shape", img.size)
-        heat_map = _convert_heat_map_colors(heat_map.permute(1, 0))
-        heat_map = heat_map.detach().numpy().copy().astype(np.uint8)
+    with devices.without_autocast():
+        if heatmap is not None:
+            shape: torch.Size = heatmap.shape
+            print("heatmap shape", shape)
+            print("img shape", img.size)
+            heatmap = _convert_heat_map_colors(heatmap.permute(1, 0))
+            heatmap = heatmap.float().detach().numpy().copy().astype(np.uint8)
+            heatmap_img = to_pil_image(heatmap)
 
-        # heat_map_img = to_pil_image(heat_map)
+            # heatmap_img = Image.fromarray(heatmap)
 
-        # print('detached', heat_map.size())
-        heat_map_img = Image.fromarray(heat_map)
+            print(img, heatmap_img)
 
-        print("img heat", img.size, heat_map_img.size)
+            img = Image.blend(img, heatmap_img, alpha)
+        else:
+            img = img.copy()
 
-        img = Image.blend(img, heat_map_img, alpha)
-    else:
-        img = img.copy()
+        if caption:
+            img = _write_on_image(img, caption)
 
-    if caption:
-        img = _write_on_image(img, caption)
-
-    if image_scale != 1.0:
-        x, y = img.size
-        size = (int(x * image_scale), int(y * image_scale))
-        img = img.resize(size, Image.BICUBIC)
+        if image_scale != 1.0:
+            x, y = img.size
+            size = (int(x * image_scale), int(y * image_scale))
+            img = img.resize(size, Image.BICUBIC)
 
     return img
 
