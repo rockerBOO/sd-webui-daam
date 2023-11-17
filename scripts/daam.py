@@ -8,7 +8,7 @@ import gradio as gr
 import numpy as np
 import modules.scripts as scripts
 from modules import devices
-from modules.images import get_font
+from modules.images import image_grid, save_image, resize_image, get_font
 import torch
 from ldm.modules.encoders.modules import FrozenOpenCLIPEmbedder
 import open_clip.tokenizer
@@ -53,42 +53,66 @@ class Script(scripts.Script):
         self,
         p: StableDiffusionProcessing,
         attention_texts: str,
-        hide_images: bool,
-        dont_save_images: bool,
-        hide_caption: bool,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
         use_grid: bool,
-        grid_layouyt: str,
+        grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
         trace_each_layers: bool,
         layers_as_row: bool,
     ):
-        global before_image_saved_handler
-        before_image_saved_handler = lambda params: self.before_image_saved(params)
+        if enabled:
+            global before_image_saved_handler
+            before_image_saved_handler = lambda params: self.before_image_saved(params)
 
     def ui(self, is_img2img):
         with gr.Group():
             with gr.Accordion("Attention Heatmap", open=False):
-                attention_texts = gr.Text(
-                    label="Attention texts for visualization. (comma separated)",
-                    value="",
-                )
-
                 with gr.Row():
-                    hide_images = gr.Checkbox(label="Hide heatmap images", value=False)
-
-                    dont_save_images = gr.Checkbox(
-                        label="Do not save heatmap images", value=False
+                    attention_texts = gr.Textbox(
+                        placeholder="Attention texts (required)",
+                        value="",
+                        info="Comma separated. Must be in prompt.",
+                        show_label=False,
+                        scale=4,
+                    )
+                    enabled = gr.Checkbox(
+                        label="Enabled",
+                        value=True,
+                        info="Enable tracing the images",
                     )
 
-                    hide_caption = gr.Checkbox(label="Hide caption", value=False)
-
                 with gr.Row():
+                    show_images = gr.Checkbox(
+                        label="Show heatmap images",
+                        value=True,
+                        info="Show images in the output area",
+                        show_label=False,
+                    )
+
+                    save_images = gr.Checkbox(
+                        label="Save heatmap images",
+                        value=True,
+                        info="Save images to the output directory",
+                        show_label=False,
+                    )
+
+                    show_caption = gr.Checkbox(
+                        label="Show caption",
+                        value=True,
+                        info="Show captions on top of the images",
+                        show_label=False,
+                    )
+
+                with gr.Row(elem_classes="row-spacer"):
                     use_grid = gr.Checkbox(
-                        label="Use grid (output to grid dir)", value=False
+                        label="Use grid", value=False, info="Output to grid dir"
                     )
 
-                    grid_layouyt = gr.Dropdown(
+                    grid_layout = gr.Dropdown(
                         [
                             Script.GRID_LAYOUT_AUTO,
                             Script.GRID_LAYOUT_PREVENT_EMPTY,
@@ -98,7 +122,7 @@ class Script(scripts.Script):
                         value=Script.GRID_LAYOUT_AUTO,
                     )
 
-                with gr.Row():
+                with gr.Row(elem_classes="row-spacer"):
                     alpha = gr.Slider(
                         label="Heatmap blend alpha",
                         value=0.5,
@@ -117,20 +141,23 @@ class Script(scripts.Script):
 
                 with gr.Row():
                     trace_each_layers = gr.Checkbox(
-                        label="Trace each layers", value=False
+                        label="Trace IN MID OUT blocks",
+                        value=False,
                     )
 
                     layers_as_row = gr.Checkbox(
-                        label="Use layers as row instead of Batch Length", value=False
+                        label="Use layers as row instead of Batch Length",
+                        value=False,
                     )
 
         return [
             attention_texts,
-            hide_images,
-            dont_save_images,
-            hide_caption,
+            enabled,
+            show_images,
+            save_images,
+            show_caption,
             use_grid,
-            grid_layouyt,
+            grid_layout,
             alpha,
             heatmap_image_scale,
             trace_each_layers,
@@ -142,11 +169,12 @@ class Script(scripts.Script):
         self,
         p: StableDiffusionProcessing,
         attention_texts: str,
-        hide_images: bool,
-        dont_save_images: bool,
-        hide_caption: bool,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
         use_grid: bool,
-        grid_layouyt: str,
+        grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
         trace_each_layers: bool,
@@ -162,12 +190,12 @@ class Script(scripts.Script):
         ), "Cannot run Daam script. Enable 'Always save all generated images' setting."
 
         self.images = []
-        self.hide_images = hide_images
-        self.dont_save_images = dont_save_images
-        self.hide_caption = hide_caption
+        self.show_images = show_images
+        self.save_images = save_images
+        self.show_caption = show_caption
         self.alpha = alpha
         self.use_grid = use_grid
-        self.grid_layouyt = grid_layouyt
+        self.grid_layout = grid_layout
         self.heatmap_image_scale = heatmap_image_scale
         self.heatmap_images = dict()
 
@@ -228,11 +256,12 @@ class Script(scripts.Script):
         self,
         p: StableDiffusionProcessing,
         attention_texts: str,
-        hide_images: bool,
-        dont_save_images: bool,
-        hide_caption: bool,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
         use_grid: bool,
-        grid_layouyt: str,
+        grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
         trace_each_layers: bool,
@@ -313,11 +342,12 @@ class Script(scripts.Script):
         p,
         processed,
         attention_texts: str,
-        hide_images: bool,
-        dont_save_images: bool,
-        hide_caption: bool,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
         use_grid: bool,
-        grid_layouyt: str,
+        grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
         trace_each_layers: bool,
@@ -365,47 +395,77 @@ class Script(scripts.Script):
                 self.heatmap_images[k] for k in sorted(self.heatmap_images.keys())
             ]
 
-        for img_list in images_list:
+        self.debug(f"Heatmap images: {len(images_list)}")
+        self.debug(f"Images: {len(self.images)}")
+
+        for img_list, img in zip(images_list, self.images):
             if img_list and self.use_grid:
-                grid_layout = self.grid_layouyt
-                if grid_layout == Script.GRID_LAYOUT_AUTO:
-                    if p.batch_size * p.n_iter == 1:
-                        grid_layout = Script.GRID_LAYOUT_PREVENT_EMPTY
-                    else:
-                        grid_layout = Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW
+                grid_img = self.save_grid(p, img_list, layers_as_row)
 
-                if grid_layout == Script.GRID_LAYOUT_PREVENT_EMPTY:
-                    grid_img = images.image_grid(img_list)
-                elif grid_layout == Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW:
-                    if layers_as_row:
-                        batch_size = len(self.attentions)
-                        rows = len(self.heatmap_images)
-                    else:
-                        batch_size = p.batch_size
-                        rows = p.batch_size * p.n_iter
-                    grid_img = images.image_grid(
-                        img_list, batch_size=batch_size, rows=rows
-                    )
-                else:
-                    pass
-
-                if not self.dont_save_images:
-                    images.save_image(
-                        grid_img, p.outpath_grids, "grid_daam", grid=True, p=p
-                    )
-
-                if not self.hide_images:
+                if self.show_images:
                     processed.images.insert(0, grid_img)
                     processed.index_of_first_image += 1
                     processed.infotexts.insert(0, processed.infotexts[0])
 
+            if self.show_images:
+                processed.images[:0] = img_list
+                processed.index_of_first_image += len(img_list)
+                processed.infotexts[:0] = [processed.infotexts[0]] * len(img_list)
+
+            if trace_each_layers:
+                save_image_resized = resize_image(
+                    resize_mode=0,
+                    im=img,
+                    width=img_list[0].size[0],
+                    height=img_list[0].size[1],
+                )
+
+                img_heatmap_grid_img = self.save_grid(
+                    p,
+                    [img_list[0]] + [save_image_resized],
+                )
             else:
-                if not self.hide_images:
-                    processed.images[:0] = img_list
-                    processed.index_of_first_image += len(img_list)
-                    processed.infotexts[:0] = [processed.infotexts[0]] * len(img_list)
+                save_image_resized = resize_image(
+                    resize_mode=0,
+                    im=img,
+                    width=img_list.size[0],
+                    height=img_list.size[1],
+                )
+
+                img_heatmap_grid_img = self.save_grid(
+                    p,
+                    img_list + [save_image_resized],
+                )
+
+            processed.images.insert(0, img_heatmap_grid_img)
+            processed.index_of_first_image += 1
+            processed.infotexts.insert(0, processed.infotexts[0])
 
         return processed
+
+    def save_grid(self, p, img_list, layers_as_row=False):
+        grid_layout = self.grid_layout
+        if grid_layout == Script.GRID_LAYOUT_AUTO:
+            if p.batch_size * p.n_iter == 1:
+                grid_layout = Script.GRID_LAYOUT_PREVENT_EMPTY
+            else:
+                grid_layout = Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW
+
+        if grid_layout == Script.GRID_LAYOUT_PREVENT_EMPTY:
+            grid_img = image_grid(img_list)
+        elif grid_layout == Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW:
+            if layers_as_row:
+                batch_size = len(self.attentions)
+                rows = len(self.heatmap_images)
+            else:
+                batch_size = p.batch_size
+                rows = p.batch_size * p.n_iter
+            grid_img = image_grid(img_list, batch_size=batch_size, rows=rows)
+
+        if self.save_images:
+            save_image(grid_img, p.outpath_grids, "grid_daam", grid=True, p=p)
+
+        return grid_img
 
     @torch.no_grad()
     def before_image_saved(self, params: script_callbacks.ImageSaveParams):
@@ -457,7 +517,7 @@ class Script(scripts.Script):
                 caption = (
                     attention
                     + (" " + self.attn_captions[i] if self.attn_captions[i] else "")
-                    if not self.hide_caption
+                    if self.show_caption
                     else None
                 )
 
@@ -495,7 +555,7 @@ class Script(scripts.Script):
                     heatmap_images.append(img)
                 else:
                     heatmap_images.append(img)
-                    if not self.dont_save_images:
+                    if self.save_images:
                         img.save(full_filename)
 
             self.heatmap_images[i] += heatmap_images
@@ -576,7 +636,7 @@ def image_overlay_heat_map(
         if heatmap is not None:
             shape: torch.Size = heatmap.shape
             heatmap = heatmap.permute(1, 0)  # flip width / height
-            heatmap = _convert_heat_map_colors()
+            heatmap = _convert_heat_map_colors(heatmap)
             heatmap = heatmap.float().detach().numpy().copy().astype(np.uint8)
             heatmap_img = to_pil_image(heatmap)
             img = Image.blend(img, heatmap_img, alpha)
@@ -589,7 +649,8 @@ def image_overlay_heat_map(
         if image_scale != 1.0:
             x, y = img.size
             size = (int(x * image_scale), int(y * image_scale))
-            img = img.resize(size, Image.BICUBIC)
+            # img = img.resize(size, Image.BICUBIC)
+            resize_image(resize_mode=0, im=img, width=size[0], height=size[1])
 
     return img
 
