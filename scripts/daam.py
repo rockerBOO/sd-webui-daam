@@ -27,6 +27,7 @@ from modules.sd_hijack_clip import (
 from modules.sd_hijack_open_clip import FrozenOpenCLIPEmbedderWithCustomWords
 from transformers.image_transforms import to_pil_image
 from matplotlib import cm
+import matplotlib.pyplot as plt
 from daam import trace
 
 global before_image_saved_handler
@@ -471,26 +472,24 @@ class Script(scripts.Script):
             params.p.prompt, params.p.styles
         )
 
-        try:
-            if self.trace_each_layers:
-                num_input = len(p.sd_model.model.diffusion_model.input_blocks)
-                num_output = len(p.sd_model.model.diffusion_model.output_blocks)
+        # try:
+        if self.trace_each_layers:
+            num_input = len(p.sd_model.model.diffusion_model.input_blocks)
+            num_output = len(p.sd_model.model.diffusion_model.output_blocks)
 
-                heatmaps = [
-                    self.trace.compute_global_heat_map(
-                        styled_prompt, layer_idx=layer_idx
-                    )
-                    for layer_idx in range(num_input + 1 + num_output)
-                ]
-            else:
-                heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
-        except RuntimeError as err:
-            self.error(
-                err,
-                f"DAAM: Failed to get computed global heatmap at"
-                + f" {batch_pos} for {styled_prompt}",
-            )
-            return
+            heatmaps = [
+                self.trace.compute_global_heat_map(styled_prompt, layer_idx=layer_idx)
+                for layer_idx in range(num_input + 1 + num_output)
+            ]
+        else:
+            heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
+        # except RuntimeError as err:
+        #     self.error(
+        #         err,
+        #         f"DAAM: Failed to get computed global heatmap at"
+        #         + f" {batch_pos} for {styled_prompt}",
+        #     )
+        #     return
 
         self.debug(f"Heatmaps: {len(heatmaps)}")
 
@@ -515,21 +514,25 @@ class Script(scripts.Script):
                     + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
                 )
                 print("saving overlay to", attention_caption_filename)
-                word_heatmap.plot_overlay(
-                    params.image, out_file=attention_caption_filename
+                # word_heatmap.plot_overlay(
+                #     params.image, out_file=attention_caption_filename
+                # )
+
+                img = plot_overlay_heat_map(
+                    params.image, word_heatmap.expand_as(params.image), word=caption
                 )
 
-                if word_heatmap is None:
-                    self.info(f"No heatmaps for '{attention}'")
-                    continue
-
-                img: Image.Image = image_overlay_heat_map(
-                    params.image,
-                    word_heatmap.expand_as(params.image),
-                    alpha=self.alpha,
-                    caption=caption,
-                    image_scale=self.heatmap_image_scale,
-                )
+                # if word_heatmap is None:
+                #     self.info(f"No heatmaps for '{attention}'")
+                #     continue
+                #
+                # img: Image.Image = image_overlay_heat_map(
+                #     params.image,
+                #     word_heatmap.expand_as(params.image),
+                #     alpha=self.alpha,
+                #     caption=caption,
+                #     image_scale=self.heatmap_image_scale,
+                # )
 
                 if self.use_grid:
                     heatmap_images.append(img)
@@ -605,6 +608,91 @@ class Tokenizer:
 
     def tokenize(self, prompt):
         return self.tokenizer(prompt)
+
+
+# Get the current figure of a matplotlib
+# Making it more clear while learning
+def plot_to_current_figure():
+    return plt.gcf()
+
+
+# Get the PIL image from a plot figure or the current plot
+def fig2img(fig):
+    """Convert a Matplotlib figure to a PIL Image and return it"""
+    import io
+
+    buf = io.BytesIO()
+    fig.savefig(buf, bbox_inches="tight", pad_inches=0)
+    buf.seek(0)
+    img = Image.open(buf)
+    return img
+
+
+def disable_fig_axis(fig=None, plt_=None):
+    if fig is None:
+        fig = plot_to_current_figure()
+
+    if plt_ is None:
+        plt_ = plt
+
+    plt_.axis("off")  # turns off axes
+    plt_.axis("tight")  # gets rid of white border
+    plt_.axis("image")  # square up the image instead of filling the "figure" space
+
+    ax = plt.gca()
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+
+    return fig
+
+
+@torch.no_grad()
+def plot_overlay_heat_map(
+    im, heat_map, word=None, out_file=None, crop=None, color_normalize=True, ax=None
+):
+    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
+    if ax is None:
+        plt.clf()
+        plt.rcParams.update({"font.size": 24})
+        plt_ = plt
+    else:
+        plt_ = ax
+
+    with devices.without_autocast():
+        im = np.array(im)
+
+        print("plot", heat_map.size())
+        heat_map = heat_map.permute(1, 0)  # swap width/height
+        # shape height, width
+
+        if crop is not None:
+            heat_map = heat_map[crop:-crop, crop:-crop]
+            im = im[crop:-crop, crop:-crop]
+
+        if color_normalize:
+            plt_.imshow(heat_map.cpu().numpy(), cmap="jet")
+        else:
+            heat_map = heat_map.clamp_(min=0, max=1)
+            plt_.imshow(heat_map.cpu().numpy(), cmap="jet", vmin=0.0, vmax=1.0)
+
+        im = torch.from_numpy(im).float() / 255
+        im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
+
+        print(
+            f"im {im.size()} heat_map {heat_map.size()} {heat_map.unsqueeze(-1).size()}"
+        )
+
+        plt_.imshow(im)
+
+        disable_fig_axis(plt_=plt_)
+        img = fig2img(fig=plt_.gcf())
+
+        if word:
+            img = _write_on_image(img, word)
+
+        plt.cla()
+
+        return img
 
 
 @torch.no_grad()
