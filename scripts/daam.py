@@ -297,6 +297,7 @@ class Script(scripts.Script):
         if trace_each_layers:
             num_input = len(p.sd_model.model.diffusion_model.input_blocks)
             num_output = len(p.sd_model.model.diffusion_model.output_blocks)
+            self.info("Setting tracer for individual layers layers")
             self.tracers = [
                 trace(
                     unet=p.sd_model.model.diffusion_model,
@@ -318,6 +319,7 @@ class Script(scripts.Script):
                 + [f"OUT{i:02d}" for i in range(num_output)]
             )
         else:
+            self.info("Setting tracer for all layers")
             self.tracers = [
                 trace(
                     unet=p.sd_model.model.diffusion_model,
@@ -357,6 +359,10 @@ class Script(scripts.Script):
         self.debug("DAAM: postprocess...")
         if self.enabled == False:
             self.debug("DAAM: disabled...")
+            return
+
+        if len(self.tracers) == 0:
+            self.info("No tracers found. Not good!")
             return
 
         for trace in self.tracers:
