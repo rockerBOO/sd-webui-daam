@@ -412,34 +412,34 @@ class Script(scripts.Script):
                 processed.index_of_first_image += len(img_list)
                 processed.infotexts[:0] = [processed.infotexts[0]] * len(img_list)
 
-            if trace_each_layers:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=img_list[0].size[0],
-                    height=img_list[0].size[1],
-                )
-
-                img_heatmap_grid_img = self.save_grid(
-                    p,
-                    [img_list[0]] + [save_image_resized],
-                )
-            else:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=img_list.size[0],
-                    height=img_list.size[1],
-                )
-
-                img_heatmap_grid_img = self.save_grid(
-                    p,
-                    img_list + [save_image_resized],
-                )
-
-            processed.images.insert(0, img_heatmap_grid_img)
-            processed.index_of_first_image += 1
-            processed.infotexts.insert(0, processed.infotexts[0])
+            # if trace_each_layers:
+            #     save_image_resized = resize_image(
+            #         resize_mode=0,
+            #         im=img,
+            #         width=img_list[0].size[0],
+            #         height=img_list[0].size[1],
+            #     )
+            #
+            #     img_heatmap_grid_img = self.save_grid(
+            #         p,
+            #         [img_list[0]] + [save_image_resized],
+            #     )
+            # else:
+            #     save_image_resized = resize_image(
+            #         resize_mode=0,
+            #         im=img,
+            #         width=img_list.size[0],
+            #         height=img_list.size[1],
+            #     )
+            #
+            #     img_heatmap_grid_img = self.save_grid(
+            #         p,
+            #         img_list + [save_image_resized],
+            #     )
+            #
+            # processed.images.insert(0, img_heatmap_grid_img)
+            # processed.index_of_first_image += 1
+            # processed.infotexts.insert(0, processed.infotexts[0])
 
         return processed
 
