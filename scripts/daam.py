@@ -3,6 +3,7 @@ import os
 import re
 from itertools import chain
 from typing import Union
+from pathlib import Path
 
 import gradio as gr
 import numpy as np
@@ -28,6 +29,7 @@ from transformers.image_transforms import to_pil_image
 from matplotlib import cm
 from daam import trace
 
+global before_image_saved_handler
 before_image_saved_handler = None
 
 
@@ -64,9 +66,7 @@ class Script(scripts.Script):
         trace_each_layers: bool,
         layers_as_row: bool,
     ):
-        if enabled:
-            global before_image_saved_handler
-            before_image_saved_handler = lambda params: self.before_image_saved(params)
+        print("RUN!")
 
     def ui(self, is_img2img):
         with gr.Group():
@@ -182,6 +182,16 @@ class Script(scripts.Script):
     ):
         self.enabled = False  # in case the assert fails
 
+        print("Attaching callback handler")
+
+        def handle_before_image_saved(params):
+            print("handle_before_image_saved")
+            self.trace_each_layers = trace_each_layers
+            self.before_image_saved(params)
+
+        global before_image_saved_handler
+        before_image_saved_handler = handle_before_image_saved
+
         self.debug("DAAM Process...")
 
         self.debug(f"attention text {attention_texts}")
@@ -286,55 +296,32 @@ class Script(scripts.Script):
         ):
             print("Embedding heatmap cannot be shown.")
 
-        global before_image_saved_handler
-        before_image_saved_handler = lambda params: self.before_image_saved(params)
-
-        self.debug("Set before_image_saved_handler to self.before_image_saved")
-
         tokenizer = self.get_tokenizer(p)
 
-        # cannot trace the same block from two tracers
         if trace_each_layers:
             num_input = len(p.sd_model.model.diffusion_model.input_blocks)
             num_output = len(p.sd_model.model.diffusion_model.output_blocks)
-            self.tracers = [
-                trace(
-                    unet=p.sd_model.model.diffusion_model,
-                    vae=p.sd_model.first_stage_model,
-                    vae_scale_factor=8,
-                    tokenizer=tokenizer,
-                    width=p.width,
-                    height=p.height,
-                    context_size=context_size,
-                    layer_idx={i},
-                    sample_size=64,  # Update to proper sample size (using 1.5 here)
-                    image_processor=to_pil_image,
-                )
-                for i in range(num_input + num_output + 1)
-            ]
             self.attn_captions = (
                 [f"IN{i:02d}" for i in range(num_input)]
                 + ["MID"]
                 + [f"OUT{i:02d}" for i in range(num_output)]
             )
         else:
-            self.tracers = [
-                trace(
-                    unet=p.sd_model.model.diffusion_model,
-                    vae=p.sd_model.first_stage_model,
-                    vae_scale_factor=8,
-                    tokenizer=tokenizer,
-                    width=p.width,
-                    height=p.height,
-                    context_size=context_size,
-                    sample_size=64,  # Update to proper sample size (using 1.5 here)
-                    image_processor=to_pil_image,
-                )
-            ]
             self.attn_captions = [""]
 
-        for tracer in self.tracers:
-            tracer.hook()
+        self.trace = trace(
+            unet=p.sd_model.model.diffusion_model,
+            vae=p.sd_model.first_stage_model,
+            vae_scale_factor=8,
+            tokenizer=tokenizer,
+            width=p.width,
+            height=p.height,
+            context_size=context_size,
+            sample_size=64,  # Update to proper sample size (using 1.5 here)
+            image_processor=to_pil_image,
+        )
+
+        self.trace.hook()
 
     @torch.no_grad()
     def postprocess(
@@ -359,26 +346,12 @@ class Script(scripts.Script):
             self.debug("DAAM: disabled...")
             return
 
-        for trace in self.tracers:
-            try:
-                trace.unhook()
-            except RuntimeError as e:
-                self.error(e, "Could not unhook")
-
-        self.tracers = []
-
         initial_info = None
 
         if initial_info is None:
             initial_info = processed.info
 
         self.images += processed.images
-
-        global before_image_saved_handler
-        before_image_saved_handler = None
-
-        if Script.DEBUG:
-            print("DAAM: Disabled before_image_saved_handler")
 
         if layers_as_row:
             images_list = []
@@ -412,34 +385,34 @@ class Script(scripts.Script):
                 processed.index_of_first_image += len(img_list)
                 processed.infotexts[:0] = [processed.infotexts[0]] * len(img_list)
 
-            if trace_each_layers:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=img_list[0].size[0],
-                    height=img_list[0].size[1],
-                )
+            # if trace_each_layers:
+            #     save_image_resized = resize_image(
+            #         resize_mode=0,
+            #         im=img,
+            #         width=img_list[0].size[0],
+            #         height=img_list[0].size[1],
+            #     )
+            #
+            #     img_heatmap_grid_img = self.save_grid(
+            #         p,
+            #         [img_list[0]] + [save_image_resized],
+            #     )
+            # else:
+            #     save_image_resized = resize_image(
+            #         resize_mode=0,
+            #         im=img,
+            #         width=img_list[0].size[0],
+            #         height=img_list[0].size[1],
+            #     )
+            #
+            #     img_heatmap_grid_img = self.save_grid(
+            #         p,
+            #         img_list + [save_image_resized],
+            #     )
 
-                img_heatmap_grid_img = self.save_grid(
-                    p,
-                    [img_list[0]] + [save_image_resized],
-                )
-            else:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=img_list.size[0],
-                    height=img_list.size[1],
-                )
-
-                img_heatmap_grid_img = self.save_grid(
-                    p,
-                    img_list + [save_image_resized],
-                )
-
-            processed.images.insert(0, img_heatmap_grid_img)
-            processed.index_of_first_image += 1
-            processed.infotexts.insert(0, processed.infotexts[0])
+            # processed.images.insert(0, img_heatmap_grid_img)
+            # processed.index_of_first_image += 1
+            # processed.infotexts.insert(0, processed.infotexts[0])
 
         return processed
 
@@ -467,49 +440,63 @@ class Script(scripts.Script):
 
         return grid_img
 
-    @torch.no_grad()
     def before_image_saved(self, params: script_callbacks.ImageSaveParams):
+        self.debug(f"Before image saved...")
         batch_pos = -1
-        if params.p.batch_size > 1:
+        if params.p.n_iter > 1:
             match = re.search(r"Batch pos: (\d+)", params.pnginfo["parameters"])
             if match:
                 batch_pos = int(match.group(1))
+            else:
+                self.info(f"No batch pos in {params.pnginfo['parameters']}")
         else:
             batch_pos = 0
 
         if batch_pos < 0:
-            print(f"DAAM: Invalid batch size")
+            self.info(
+                f"DAAM: Invalid batch size: {params.p.batch_size} pos: {batch_pos}"
+            )
             return
 
-        if len(self.tracers) == 0:
-            print("DAAM: No tracers to heatmap")
+        if self.trace is None:
+            self.info("No trace")
 
         if len(self.attentions) == 0:
-            print("DAAM: No attentions to heamap")
+            self.info("No attentions to heatmap")
 
-        if len(self.tracers) == 0 or len(self.attentions) < 1:
+        if self.trace is None or len(self.attentions) < 1:
             return
 
-        for i, tracer in enumerate(self.tracers):
-            styled_prompt = shared.prompt_styles.apply_styles_to_prompt(
-                params.p.prompt, params.p.styles
-            )
-            # try:
-            try:
-                global_heat_map = tracer.compute_global_heat_map(styled_prompt)
-            except RuntimeError as err:
-                self.error(
-                    err,
-                    f"DAAM: Failed to get computed global heatmap at"
-                    + f" {batch_pos} for {styled_prompt}",
-                )
-                continue
+        styled_prompt = shared.prompt_styles.apply_styles_to_prompt(
+            params.p.prompt, params.p.styles
+        )
 
+        try:
+            if self.trace_each_layers:
+                num_input = len(p.sd_model.model.diffusion_model.input_blocks)
+                num_output = len(p.sd_model.model.diffusion_model.output_blocks)
+
+                heatmaps = [
+                    self.trace.compute_global_heat_map(
+                        styled_prompt, layer_idx=layer_idx
+                    )
+                    for layer_idx in range(num_input + 1 + num_output)
+                ]
+            else:
+                heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
+        except RuntimeError as err:
+            self.error(
+                err,
+                f"DAAM: Failed to get computed global heatmap at"
+                + f" {batch_pos} for {styled_prompt}",
+            )
+            return
+
+        self.debug(f"Heatmaps: {len(heatmaps)}")
+
+        for i, heatmap in enumerate(heatmaps):
             if i not in self.heatmap_images:
                 self.heatmap_images[i] = []
-
-            if global_heat_map is None:
-                continue
 
             heatmap_images = []
             for attention in self.attentions:
@@ -521,34 +508,27 @@ class Script(scripts.Script):
                     else None
                 )
 
-                word_heatmap = global_heat_map.compute_word_heat_map(attention)
-                if word_heatmap is None:
-                    print(f"No heatmaps for '{attention}'")
-
-                word_heatmap.plot_overlay(params.image, f"test-{caption}.png")
-
-                heatmap_img = (
-                    word_heatmap.expand_as(params.image)
-                    if word_heatmap is not None
-                    else None
+                word_heatmap = heatmap.compute_word_heat_map(attention)
+                filename = Path(params.filename)
+                attention_caption_filename = filename.with_name(
+                    f"{filename.stem}_TEST_{attention}"
+                    + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
                 )
+                print("saving overlay to", attention_caption_filename)
+                word_heatmap.plot_overlay(
+                    params.image, out_file=attention_caption_filename
+                )
+
+                if word_heatmap is None:
+                    self.info(f"No heatmaps for '{attention}'")
+                    continue
 
                 img: Image.Image = image_overlay_heat_map(
                     params.image,
-                    heatmap_img,
+                    word_heatmap.expand_as(params.image),
                     alpha=self.alpha,
                     caption=caption,
                     image_scale=self.heatmap_image_scale,
-                )
-                # img = overlay_heat_map(params.image, heatmap_img, word=caption)
-
-                fullfn_without_extension, extension = os.path.splitext(params.filename)
-                full_filename = (
-                    fullfn_without_extension
-                    + "_"
-                    + attention
-                    + ("_" + self.attn_captions[i] if self.attn_captions[i] else "")
-                    + extension
                 )
 
                 if self.use_grid:
@@ -556,7 +536,13 @@ class Script(scripts.Script):
                 else:
                     heatmap_images.append(img)
                     if self.save_images:
-                        img.save(full_filename)
+                        filename = Path(params.filename)
+                        attention_caption_filename = filename.with_name(
+                            f"{filename.stem}_{attention}"
+                            + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
+                        )
+
+                        img.save(attention_caption_filename)
 
             self.heatmap_images[i] += heatmap_images
 
@@ -571,13 +557,11 @@ class Script(scripts.Script):
 
         # if it is last batch pos, clear heatmaps
         # if batch_pos == params.p.batch_size - 1:
-        #     for tracer in self.tracers:
+        #     for tracer in self.traces:
         #         tracer.reset()
 
-        global before_image_saved_handler
-        before_image_saved_handler = None
-
-        self.debug("Disabled inside before_image_saved_handler")
+        self.trace.unhook()
+        self.trace = None
 
         return
 
@@ -588,25 +572,30 @@ class Script(scripts.Script):
         print(f"DAAM: {message}")
 
     def error(self, err, message):
+        print(err)
         print(f"DAAM: {message}")
 
+        import traceback
+
+        traceback.print_stack()
+
     def __getattr__(self, attr):
+        import traceback
+
         print("unknown call", attr)
+        traceback.print_stack()
         # if attr not in self.__dict__:
         #     return getattr(self.obj, attr)
         # return super().__getattr__(attr)
 
 
-def handle_before_image_saved(params: script_callbacks.ImageSaveParams):
-    if before_image_saved_handler is not None and callable(before_image_saved_handler):
-        print("Caling handler image saved callback")
-
-        before_image_saved_handler(params)
-
-    return
+@torch.no_grad()
+def on_before_image_saved(params):
+    global before_image_saved_handler
+    return before_image_saved_handler(params)
 
 
-script_callbacks.on_before_image_saved(handle_before_image_saved)
+script_callbacks.on_before_image_saved(on_before_image_saved)
 
 
 # Emulating hugging face tokenizer
@@ -635,10 +624,20 @@ def image_overlay_heat_map(
     with devices.without_autocast():
         if heatmap is not None:
             shape: torch.Size = heatmap.shape
-            heatmap = heatmap.permute(1, 0)  # flip width / height
+            # heatmap = heatmap.permute(1, 0)  # flip width / height
             heatmap = _convert_heat_map_colors(heatmap)
-            heatmap = heatmap.float().detach().numpy().copy().astype(np.uint8)
-            heatmap_img = to_pil_image(heatmap)
+
+            # heatmap = heatmap.float().numpy().copy().astype(np.uint8)
+            # heatmap_img = Image.fromarray(heatmap)
+            # print("heatmap", heatmap.size(), "img",  img.size)
+            # print('permute', heatmap.unsqueeze(-1).size())
+            # heatmap_img = to_pil_image(heatmap.float().numpy(), do_rescale=True)
+            print("heatmap", heatmap.size(), "img", img.size)
+            heatmap_img = to_pil_image(
+                heatmap.permute(1, 0, 2).clone(), do_rescale=True
+            )
+            heatmap_img.save("yo.png")
+            print("heatmap_img", heatmap_img, "img", img)
             img = Image.blend(img, heatmap_img, alpha)
         else:
             img = img.copy()
