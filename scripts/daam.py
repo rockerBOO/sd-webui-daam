@@ -4,6 +4,7 @@ import re
 from itertools import chain
 from typing import Union
 from pathlib import Path
+import math
 
 import gradio as gr
 import numpy as np
@@ -26,6 +27,9 @@ from modules.sd_hijack_clip import (
 )
 from modules.sd_hijack_open_clip import FrozenOpenCLIPEmbedderWithCustomWords
 from transformers.image_transforms import to_pil_image
+import matplotlib
+
+matplotlib.use("Agg")
 from matplotlib import cm
 import matplotlib.pyplot as plt
 from daam import trace
@@ -183,10 +187,7 @@ class Script(scripts.Script):
     ):
         self.enabled = False  # in case the assert fails
 
-        print("Attaching callback handler")
-
         def handle_before_image_saved(params):
-            print("handle_before_image_saved")
             self.trace_each_layers = trace_each_layers
             self.before_image_saved(params)
 
@@ -210,7 +211,11 @@ class Script(scripts.Script):
         self.heatmap_image_scale = heatmap_image_scale
         self.heatmap_images = dict()
 
-        self.attentions = [s.strip() for s in attention_texts.split(",") if s.strip()]
+        self.attentions = [
+            s.strip()
+            for s in attention_texts.split(",")
+            if s.strip() and len(s.strip()) > 0
+        ]
         self.enabled = len(self.attentions) > 0
 
         fix_seed(p)
@@ -249,16 +254,16 @@ class Script(scripts.Script):
         self.prompt_analyzer = prompt_analyzer
         context_size = prompt_analyzer.context_size
 
-        print(
+        self.debug(
             f"daam run with context_size={prompt_analyzer.context_size}, token_count={prompt_analyzer.token_count}"
         )
-        print(
+        self.debug(
             f"remade_tokens={prompt_analyzer.tokens}, multipliers={prompt_analyzer.multipliers}"
         )
-        print(
+        self.debug(
             f"hijack_comments={prompt_analyzer.hijack_comments}, used_custom_terms={prompt_analyzer.used_custom_terms}"
         )
-        print(f"fixes={prompt_analyzer.fixes}")
+        self.debug(f"fixes={prompt_analyzer.fixes}")
 
         return context_size
 
@@ -302,7 +307,6 @@ class Script(scripts.Script):
         if trace_each_layers:
             num_input = len(p.sd_model.model.diffusion_model.input_blocks)
             num_output = len(p.sd_model.model.diffusion_model.output_blocks)
-            self.info("Setting tracer for individual layers layers")
             self.tracers = [
                 trace(
                     unet=p.sd_model.model.diffusion_model,
@@ -337,6 +341,8 @@ class Script(scripts.Script):
             sample_size=64,  # Update to proper sample size (using 1.5 here)
             image_processor=to_pil_image,
         )
+
+        self.heatmap_blend_alpha = alpha
 
         self.trace.hook()
 
@@ -426,6 +432,7 @@ class Script(scripts.Script):
             #         p,
             #         img_list + [save_image_resized],
             #     )
+            #
             # processed.images.insert(0, img_heatmap_grid_img)
             # processed.index_of_first_image += 1
             # processed.infotexts.insert(0, processed.infotexts[0])
@@ -487,24 +494,26 @@ class Script(scripts.Script):
             params.p.prompt, params.p.styles
         )
 
-        # try:
-        if self.trace_each_layers:
-            num_input = len(p.sd_model.model.diffusion_model.input_blocks)
-            num_output = len(p.sd_model.model.diffusion_model.output_blocks)
+        try:
+            if self.trace_each_layers:
+                num_input = len(p.sd_model.model.diffusion_model.input_blocks)
+                num_output = len(p.sd_model.model.diffusion_model.output_blocks)
 
-            heatmaps = [
-                self.trace.compute_global_heat_map(styled_prompt, layer_idx=layer_idx)
-                for layer_idx in range(num_input + 1 + num_output)
-            ]
-        else:
-            heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
-        # except RuntimeError as err:
-        #     self.error(
-        #         err,
-        #         f"DAAM: Failed to get computed global heatmap at"
-        #         + f" {batch_pos} for {styled_prompt}",
-        #     )
-        #     return
+                heatmaps = [
+                    self.trace.compute_global_heat_map(
+                        styled_prompt, layer_idx=layer_idx
+                    )
+                    for layer_idx in range(num_input + 1 + num_output)
+                ]
+            else:
+                heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
+        except RuntimeError as err:
+            self.warning(
+                err,
+                f"DAAM: Failed to get computed global heatmap at"
+                + f" {batch_pos} for {styled_prompt}",
+            )
+            return
 
         self.debug(f"Heatmaps: {len(heatmaps)}")
 
@@ -522,32 +531,24 @@ class Script(scripts.Script):
                     else None
                 )
 
-                word_heatmap = heatmap.compute_word_heat_map(attention)
+                try:
+                    word_heatmap = heatmap.compute_word_heat_map(attention)
+                except ValueError as e:
+                    self.warning(e, "")
+                    continue
+
                 filename = Path(params.filename)
                 attention_caption_filename = filename.with_name(
                     f"{filename.stem}_TEST_{attention}"
                     + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
                 )
-                print("saving overlay to", attention_caption_filename)
-                # word_heatmap.plot_overlay(
-                #     params.image, out_file=attention_caption_filename
-                # )
 
                 img = plot_overlay_heat_map(
-                    params.image, word_heatmap.expand_as(params.image), word=caption
+                    params.image,
+                    word_heatmap.expand_as(params.image),
+                    word=caption,
+                    alpha=self.heatmap_blend_alpha,
                 )
-
-                # if word_heatmap is None:
-                #     self.info(f"No heatmaps for '{attention}'")
-                #     continue
-                #
-                # img: Image.Image = image_overlay_heat_map(
-                #     params.image,
-                #     word_heatmap.expand_as(params.image),
-                #     alpha=self.alpha,
-                #     caption=caption,
-                #     image_scale=self.heatmap_image_scale,
-                # )
 
                 if self.use_grid:
                     heatmap_images.append(img)
@@ -578,24 +579,32 @@ class Script(scripts.Script):
         #     for tracer in self.traces:
         #         tracer.reset()
 
-        self.trace.unhook()
-        self.trace = None
+        try:
+            self.trace.unhook()
+        except RuntimeError as e:
+            if e == "Module is not hooked":
+                self.debug(e)
+                pass
 
         return
 
     def debug(self, message):
-        print(f"DAAM Debug: {message}")
+        if Script.DEBUG:
+            print(f"DAAM Debug: {message}")
 
     def log(self, message):
         print(f"DAAM: {message}")
 
     def error(self, err, message):
         print(err)
-        print(f"DAAM: {message}")
+        self.log(message)
 
         import traceback
 
         traceback.print_stack()
+
+    def warning(self, err, message):
+        self.log(f"{err} {message}")
 
     def __getattr__(self, attr):
         import traceback
@@ -625,59 +634,77 @@ class Tokenizer:
         return self.tokenizer(prompt)
 
 
-# Get the current figure of a matplotlib
-# Making it more clear while learning
-def plot_to_current_figure():
-    return plt.gcf()
-
-
 # Get the PIL image from a plot figure or the current plot
 def fig2img(fig):
     """Convert a Matplotlib figure to a PIL Image and return it"""
     import io
 
     buf = io.BytesIO()
-    fig.savefig(buf, bbox_inches="tight", pad_inches=0)
+    fig.savefig(buf)
     buf.seek(0)
     img = Image.open(buf)
     return img
 
 
-def disable_fig_axis(fig=None, plt_=None):
-    if fig is None:
-        fig = plot_to_current_figure()
-
-    if plt_ is None:
-        plt_ = plt
-
-    plt_.axis("off")  # turns off axes
-    plt_.axis("tight")  # gets rid of white border
-    plt_.axis("image")  # square up the image instead of filling the "figure" space
-
-    ax = plt.gca()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-
-    return fig
-
-
 @torch.no_grad()
 def plot_overlay_heat_map(
-    im, heat_map, word=None, out_file=None, crop=None, color_normalize=True, ax=None
+    im,
+    heat_map,
+    word=None,
+    out_file=None,
+    crop=None,
+    color_normalize=True,
+    ax=None,
+    alpha=1.0,
 ):
+    dpi = 100
+    header_size = 40
+    scale = 1.1
+
+    width = math.ceil((im.size[0] / dpi) * scale)
+    height = math.ceil(((im.size[1] + header_size) / dpi) * scale)
+
     # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
     if ax is None:
         plt.clf()
-        plt.rcParams.update({"font.size": 24})
         plt_ = plt
+
+        plt_.tight_layout()
+        plt_.rcParams.update(
+            {
+                "font.size": 24,
+                "text.color": opts.grid_text_active_color,
+                "axes.labelcolor": opts.grid_background_color,
+                "figure.facecolor": opts.grid_background_color,
+                "figure.figsize": (
+                    math.ceil((im.size[0] / dpi) * scale),
+                    math.ceil(((im.size[1] + header_size) / dpi) * scale),
+                ),
+                "figure.dpi": dpi,
+                "savefig.bbox": "tight",
+                "savefig.pad_inches": 0,
+                "figure.frameon": False,
+                "axes.spines.left": False,
+                "axes.spines.right": False,
+                "axes.spines.top": False,
+                "axes.spines.bottom": False,
+                "ytick.major.left": False,
+                "ytick.major.right": False,
+                "ytick.minor.left": False,
+                "xtick.major.top": False,
+                "xtick.major.bottom": False,
+                "xtick.minor.top": False,
+                "xtick.minor.bottom": False,
+            }
+        )
     else:
         plt_ = ax
 
     with devices.without_autocast():
         im = np.array(im)
 
-        print("plot", heat_map.size())
-        heat_map = heat_map.permute(1, 0)  # swap width/height
+        # print("plot", heat_map.size())
+        heat_map = heat_map.permute(1, 0)  # swap width/height to match numpy array
         # shape height, width
 
         if crop is not None:
@@ -691,21 +718,29 @@ def plot_overlay_heat_map(
             plt_.imshow(heat_map.cpu().numpy(), cmap="jet", vmin=0.0, vmax=1.0)
 
         im = torch.from_numpy(im).float() / 255
-        im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
+        im = torch.cat((im, (1 - (heat_map.unsqueeze(-1) * alpha))), dim=-1)
 
-        print(
-            f"im {im.size()} heat_map {heat_map.size()} {heat_map.unsqueeze(-1).size()}"
-        )
+        # print(
+        #     f"im {im.size()} heat_map {heat_map.size()} {heat_map.unsqueeze(-1).size()}"
+        # )
 
         plt_.imshow(im)
 
-        disable_fig_axis(plt_=plt_)
+        if word is not None:
+            if ax is None:
+                plt_.title(word)
+            else:
+                ax.set_title(word)
+
+        plt_.gcf().set(
+            facecolor=opts.grid_background_color, figwidth=width, figheight=height
+        )
+
+        # disable_fig_axis(plt_=plt_)
         img = fig2img(fig=plt_.gcf())
 
-        if word:
-            img = _write_on_image(img, word)
-
-        plt.cla()
+        # if word:
+        #     img = _write_on_image(img, word)
 
         return img
 
