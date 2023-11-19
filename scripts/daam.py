@@ -43,7 +43,7 @@ class Script(scripts.Script):
     GRID_LAYOUT_PREVENT_EMPTY = "Prevent Empty Spot"
     GRID_LAYOUT_BATCH_LENGTH_AS_ROW = "Batch Length As Row"
 
-    DEBUG = False
+    DEBUG = True
 
     def title(self):
         return "DAAM script"
@@ -216,7 +216,8 @@ class Script(scripts.Script):
             for s in attention_texts.split(",")
             if s.strip() and len(s.strip()) > 0
         ]
-        self.enabled = len(self.attentions) > 0
+        self.enabled = len(self.attentions) > 0 and enabled
+        self.trace = None
 
         fix_seed(p)
 
@@ -286,7 +287,7 @@ class Script(scripts.Script):
         **kwargs,
     ):
         self.debug("Process batch")
-        if not self.enabled:
+        if not self.is_enabled(attention_texts, enabled):
             self.debug("not enabled")
             return
 
@@ -304,31 +305,18 @@ class Script(scripts.Script):
 
         tokenizer = self.get_tokenizer(p)
 
-        if trace_each_layers:
-            num_input = len(p.sd_model.model.diffusion_model.input_blocks)
-            num_output = len(p.sd_model.model.diffusion_model.output_blocks)
-            self.tracers = [
-                trace(
-                    unet=p.sd_model.model.diffusion_model,
-                    vae=p.sd_model.first_stage_model,
-                    vae_scale_factor=8,
-                    tokenizer=tokenizer,
-                    width=p.width,
-                    height=p.height,
-                    context_size=context_size,
-                    layer_idx={i},
-                    sample_size=64,  # Update to proper sample size (using 1.5 here)
-                    image_processor=to_pil_image,
-                )
-                for i in range(num_input + num_output + 1)
-            ]
-            self.attn_captions = (
-                [f"IN{i:02d}" for i in range(num_input)]
-                + ["MID"]
-                + [f"OUT{i:02d}" for i in range(num_output)]
-            )
-        else:
-            self.attn_captions = [""]
+        # if trace_each_layers:
+        #     num_input = len(p.sd_model.model.diffusion_model.input_blocks)
+        #     num_output = len(p.sd_model.model.diffusion_model.output_blocks)
+        #     self.attn_captions = (
+        #         [f"IN{i:02d}" for i in range(num_input)]
+        #         + ["MID"]
+        #         + [f"OUT{i:02d}" for i in range(num_output)]
+        #     )
+        # else:
+        #     self.attn_captions = [""]
+        #
+        #
 
         self.trace = trace(
             unet=p.sd_model.model.diffusion_model,
@@ -365,7 +353,7 @@ class Script(scripts.Script):
         **kwargs,
     ):
         self.debug("DAAM: postprocess...")
-        if self.enabled == False:
+        if self.is_enabled(attention_texts, enabled) == False:
             self.debug("DAAM: disabled...")
             return
 
@@ -439,6 +427,18 @@ class Script(scripts.Script):
 
         return processed
 
+    def is_enabled(self, attention_texts, enabled):
+        if self.enabled is False:
+            return False
+
+        if enabled is False:
+            return False
+
+        if attention_texts == "":
+            return False
+
+        return True
+
     def save_grid(self, p, img_list, layers_as_row=False):
         grid_layout = self.grid_layout
         if grid_layout == Script.GRID_LAYOUT_AUTO:
@@ -464,30 +464,21 @@ class Script(scripts.Script):
         return grid_img
 
     def before_image_saved(self, params: script_callbacks.ImageSaveParams):
-        self.debug(f"Before image saved...")
-        batch_pos = -1
-        if params.p.n_iter > 1:
-            match = re.search(r"Batch pos: (\d+)", params.pnginfo["parameters"])
-            if match:
-                batch_pos = int(match.group(1))
-            else:
-                self.info(f"No batch pos in {params.pnginfo['parameters']}")
-        else:
-            batch_pos = 0
-
-        if batch_pos < 0:
-            self.info(
-                f"DAAM: Invalid batch size: {params.p.batch_size} pos: {batch_pos}"
-            )
-            return
+        debug(f"Before image saved...")
+        print(
+            "batch size",
+            params.p.batch_size,
+            "iteration",
+            params.p.iteration,
+        )
 
         if self.trace is None:
-            self.info("No trace")
+            info("No trace")
 
         if len(self.attentions) == 0:
-            self.info("No attentions to heatmap")
+            info("No attentions to heatmap")
 
-        if self.trace is None or len(self.attentions) < 1:
+        if self.trace is None or len(self.attentions) == 0:
             return
 
         styled_prompt = shared.prompt_styles.apply_styles_to_prompt(
@@ -496,58 +487,46 @@ class Script(scripts.Script):
 
         try:
             if self.trace_each_layers:
-                num_input = len(p.sd_model.model.diffusion_model.input_blocks)
-                num_output = len(p.sd_model.model.diffusion_model.output_blocks)
-
-                heatmaps = [
+                batched_heatmaps = [
                     self.trace.compute_global_heat_map(
                         styled_prompt, layer_idx=layer_idx
                     )
                     for layer_idx in range(num_input + 1 + num_output)
                 ]
             else:
-                heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
+                batched_heatmaps = [self.trace.compute_global_heat_map(styled_prompt)]
         except RuntimeError as err:
             self.warning(
                 err,
-                f"DAAM: Failed to get computed global heatmap at"
-                + f" {batch_pos} for {styled_prompt}",
+                f"DAAM: Failed to get computed global heatmap for "
+                + f" {styled_prompt}",
             )
             return
 
-        self.debug(f"Heatmaps: {len(heatmaps)}")
+        debug(
+            f"Batched Heatmaps: {len(batched_heatmaps)} heatmaps: {sum([len(hm.heat_maps) for hm in batched_heatmaps])}"
+        )
+        # debug(f"Attn captions: {len(self.attn_captions)} {[cap for cap in self.attn_captions]}")
 
-        for i, heatmap in enumerate(heatmaps):
+        for i, global_heat_map in enumerate(batched_heatmaps):
             if i not in self.heatmap_images:
                 self.heatmap_images[i] = []
 
             heatmap_images = []
             for attention in self.attentions:
                 img_size = params.image.size
-                caption = (
-                    attention
-                    + (" " + self.attn_captions[i] if self.attn_captions[i] else "")
-                    if self.show_caption
-                    else None
-                )
+                caption = attention
 
-                try:
-                    word_heatmap = heatmap.compute_word_heat_map(attention)
-                except ValueError as e:
-                    self.warning(e, "")
-                    continue
+                img = create_heatmap_image_overlay(
+                    global_heat_map,
+                    attention,
+                    params=params,
+                    alpha=self.heatmap_blend_alpha,
+                )
 
                 filename = Path(params.filename)
                 attention_caption_filename = filename.with_name(
-                    f"{filename.stem}_TEST_{attention}"
-                    + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
-                )
-
-                img = plot_overlay_heat_map(
-                    params.image,
-                    word_heatmap.expand_as(params.image),
-                    word=caption,
-                    alpha=self.heatmap_blend_alpha,
+                    f"{filename.stem}_TEST_{attention}{filename.suffix}"
                 )
 
                 if self.use_grid:
@@ -557,8 +536,7 @@ class Script(scripts.Script):
                     if self.save_images:
                         filename = Path(params.filename)
                         attention_caption_filename = filename.with_name(
-                            f"{filename.stem}_{attention}"
-                            + f"{'_' + self.attn_captions[i] if self.attn_captions[i] else ''}{filename.suffix}"
+                            f"{filename.stem}_{attention}{filename.suffix}"
                         )
 
                         img.save(attention_caption_filename)
@@ -566,7 +544,7 @@ class Script(scripts.Script):
             self.heatmap_images[i] += heatmap_images
 
         if len(self.heatmap_images) == 0:
-            self.log("DAAM: Did not create any heatmap images.")
+            info("DAAM: Did not create any heatmap images.")
 
         self.heatmap_images = {
             j: self.heatmap_images[j]
@@ -583,7 +561,7 @@ class Script(scripts.Script):
             self.trace.unhook()
         except RuntimeError as e:
             if e == "Module is not hooked":
-                self.debug(e)
+                debug(e)
                 pass
 
         return
@@ -610,10 +588,49 @@ class Script(scripts.Script):
         import traceback
 
         print("unknown call", attr)
-        traceback.print_stack()
+        # traceback.print_stack()
         # if attr not in self.__dict__:
         #     return getattr(self.obj, attr)
         # return super().__getattr__(attr)
+
+
+def create_heatmap_image_overlay(heatmap, attention_word, alpha, params):
+    try:
+        word_heatmap = heatmap.compute_word_heat_map(attention_word)
+    except ValueError as e:
+        warning(e, "")
+        return
+
+    img = plot_overlay_heat_map(
+        params.image,
+        word_heatmap.expand_as(params.image),
+        word=attention_word,
+        alpha=alpha,
+    )
+
+    return img
+
+
+def debug(message):
+    if Script.DEBUG:
+        print(f"DAAM Debug: {message}")
+
+
+def info(message):
+    print(f"DAAM: {message}")
+
+
+def error(err, message):
+    print(err)
+    log(message)
+
+    import traceback
+
+    traceback.print_stack()
+
+
+def warning(err, message):
+    log(f"{err} {message}")
 
 
 @torch.no_grad()
