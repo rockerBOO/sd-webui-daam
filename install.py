@@ -18,10 +18,29 @@ def check_matplotlib():
 
 
 if not check_matplotlib():
-    launch.run_pip("install matplotlib==3.6.2", desc="Installing matplotlib==3.6.2")
-
-if not launch.is_installed("daam"):
     launch.run_pip(
-        "install git+https://github.com/rockerBOO/daam@batch_size",
+        "install matplotlib==3.6.2", desc="Installing matplotlib==3.6.2"
+    )
+
+
+def check_daam():
+    if not launch.is_installed("daam"):
+        return False
+
+    try:
+        import daam
+    except ImportError:
+        return False
+
+    if hasattr(daam, "_version"):
+        version = daam.__version__.split(".")
+        version = (int(version[0]), int(version[1]), int(version[2]))
+        return version >= (0, 1, 1)
+    return False
+
+
+if not check_daam():
+    launch.run_pip(
+        "install git+https://github.com/rockerBOO/daam@boo",
         desc="DAAM library",
     )
