@@ -22,7 +22,6 @@ if not check_matplotlib():
 
 if not launch.is_installed("daam"):
     launch.run_pip(
-        "install git+https://github.com/rockerBOO/daam@support-compvis-stabilityai-libraries",
+        "install git+https://github.com/rockerBOO/daam@batch_size",
         desc="DAAM library",
     )
-    # launch.run_pip("install -e /mnt/900/builds/sd-scripts/daam", desc="local daam")
