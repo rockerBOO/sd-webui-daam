@@ -67,7 +67,7 @@ def plot_overlay_heat_map(
 
     if ax is None:
         plt_.gcf().set(
-            facecolor=opts["grid_background_color"]
+            facecolor=opts.grid_background_color
             if opts is not None
             else "#fff",
             figwidth=width,
@@ -147,9 +147,9 @@ def create_plot_for_img(img, opts):
     if opts is not None:
         plt.rcParams.update(
             {
-                "text.color": opts["grid_text_active_color"],
-                "axes.labelcolor": opts["grid_background_color"],
-                "figure.facecolor": opts["grid_background_color"],
+                "text.color": opts.grid_text_active_color,
+                "axes.labelcolor": opts.grid_background_color,
+                "figure.facecolor": opts.grid_background_color,
             }
         )
 
@@ -182,7 +182,7 @@ def fig2img(fig):
 def compile_processed_image(
     image: Image.Image,
     heatmap_images: List[Image.Image],
-    infotexts: List[str],
+    infotext: str,
     offset: int,
     grid_opts: GridOpts,
     use_grid=False,
@@ -191,7 +191,7 @@ def compile_processed_image(
 ):
     grid_images = []
     images = [image]
-    assert len(infotexts) > 0
+    infotexts = [infotext]
     offset = 0
 
     # HEATMAP IMAGES

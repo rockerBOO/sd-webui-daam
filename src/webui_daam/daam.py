@@ -33,9 +33,10 @@ from transformers.image_transforms import to_pil_image
 from webui_daam.log import debug, info, warning, error, log
 from webui_daam.image import (
     create_heatmap_image_overlay,
+    compile_processed_image,
 )
 from webui_daam.tokenizer import Tokenizer
-from webui_daam.grid import make_grid
+from webui_daam.grid import make_grid, GridOpts, GRID_LAYOUT_AUTO
 
 matplotlib.use("Agg")
 
@@ -417,81 +418,42 @@ class Script(scripts.Script):
                 + f"img {img}"
             )
 
-            # Add grid image
-            if heatmap_images and self.use_grid:
-                grid_img = make_grid(
-                    heatmap_images,
-                    grid_layout,
-                    p.batch_size,
-                    p.n_iter,
+            images, infotexts, offset, grid_images = compile_processed_image(
+                img,
+                heatmap_images,
+                processed.infotexts[p.batch_index],
+                offset=0,
+                grid_opts=GridOpts(
+                    layout=GRID_LAYOUT_AUTO,
+                    batch_size=p.batch_size,
+                    n_iter=p.n_iter,
                     num_attention_words=len(self.attentions),
                     num_heatmap_images=len(self.heatmap_images.keys()),
                     layers_as_row=layers_as_row,
-                )
+                ),
+            )
 
-                if save_images:
+            # save grid images
+            if save_image and use_grid:
+                for grid_image, batch_size, rows in grid_images:
                     save_image(
-                        grid_img, p.outpath_grids, "grid_daam", grid=True, p=p
+                        grid_image,
+                        p.outpaths_grids,
+                        "grid_daam",
+                        grid=True,
+                        p=p,
                     )
 
-                if show_images:
-                    processed.images.insert(0, grid_img)
-                    processed.index_of_first_image += 1
-                    processed.infotexts.insert(0, processed.infotexts[0])
+            debug(
+                f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images)}"
+            )
+            debug(f"Images {images}")
+            debug(f"Infotext {infotexts}")
+            debug(f"Grid images {grid_images}")
 
-            if show_images:
-                processed.images[:0] = heatmap_images
-                processed.index_of_first_image += len(heatmap_images)
-                processed.infotexts[:0] = [processed.infotexts[0]] * len(
-                    heatmap_images
-                )
-
-            # Resize image...
-            if trace_each_layers:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=heatmap_images[0].size[0],
-                    height=heatmap_images[0].size[1],
-                )
-
-                img_heatmap_grid_img = make_grid(
-                    heatmap_images + [save_image_resized],
-                    grid_layout,
-                    p.batch_size,
-                    p.n_iter,
-                    num_attention_words=len(self.attentions),
-                    num_heatmap_images=len(self.heatmap_images.keys()),
-                    layers_as_row=layers_as_row,
-                )
-            else:
-                save_image_resized = resize_image(
-                    resize_mode=0,
-                    im=img,
-                    width=heatmap_images[0].size[0],
-                    height=heatmap_images[0].size[1],
-                )
-
-                img_heatmap_grid_img = make_grid(
-                    heatmap_images + [save_image_resized],
-                    grid_layout,
-                    p.batch_size,
-                    p.n_iter,
-                    num_attention_words=len(self.attentions),
-                    num_heatmap_images=len(self.heatmap_images.keys()),
-                    layers_as_row=layers_as_row,
-                )
-
-            if save_image:
-                save_image(
-                    grid_img, p.outpath_grids, "grid_daam", grid=True, p=p
-                )
-
-            if show_images and grid_per_image:
-                # Insert grid images into processed list
-                processed.images.insert(0, img_heatmap_grid_img)
-                processed.index_of_first_image += 1
-                processed.infotexts.insert(0, processed.infotexts[0])
+            # Add new images to the start of the processed image list
+            processed.images[:0] = images
+            processed.infotexts[:0] = infotexts
 
         return processed
 

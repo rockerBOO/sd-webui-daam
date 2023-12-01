@@ -156,15 +156,17 @@ def test_batch_idx_parameter(sample_global_heatmap, sample_image):
 
 
 def test_opts_parameter(sample_global_heatmap, sample_image):
+    @dataclass
+    class Opts
+        grid_background_color: str = "red"
+        grid_text_active_color: str = "red"
+
     # Test with additional options (opts)
     img = create_heatmap_image_overlay(
         sample_global_heatmap,
         "word",
         sample_image,
-        opts={
-            "grid_background_color": "red",
-            "grid_text_active_color": "green",
-        },
+        opts=Opts(),
     )
 
     assert isinstance(img, Image.Image)
