@@ -1,5 +1,9 @@
+from .config import DEBUG
+
+
 def debug(*args, **kwargs):
-    print("DAAM Debug: ", *args, **kwargs)
+    if DEBUG is True:
+        print("DAAM Debug: ", *args, **kwargs)
 
 
 def info(message):

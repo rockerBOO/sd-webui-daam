@@ -48,8 +48,6 @@ class Script(scripts.Script):
     GRID_LAYOUT_PREVENT_EMPTY = "Prevent Empty Spot"
     GRID_LAYOUT_BATCH_LENGTH_AS_ROW = "Batch Length As Row"
 
-    DEBUG = True
-
     def title(self):
         return "DAAM script"
 
@@ -124,6 +122,12 @@ class Script(scripts.Script):
                         info="Output to grid dir",
                     )
 
+                    grid_per_image = gr.Checkbox(
+                        label="Grid per image",
+                        value=True,
+                        info="Attention heatmap grid per image",
+                    )
+
                     grid_layout = gr.Dropdown(
                         [
                             Script.GRID_LAYOUT_AUTO,
@@ -151,7 +155,7 @@ class Script(scripts.Script):
                         step=0.025,
                     )
 
-                with gr.Row():
+                with gr.Row(visible=False):
                     trace_each_layers = gr.Checkbox(
                         label="Trace IN MID OUT blocks",
                         value=False,
@@ -169,11 +173,14 @@ class Script(scripts.Script):
             save_images,
             show_caption,
             use_grid,
+            grid_per_image,
             grid_layout,
             alpha,
             heatmap_image_scale,
             trace_each_layers,
             layers_as_row,
+            # False,  # disabling trace for now
+            # False,
         ]
 
     @torch.no_grad()
@@ -186,6 +193,7 @@ class Script(scripts.Script):
         save_images: bool,
         show_caption: bool,
         use_grid: bool,
+        grid_per_image: bool,
         grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
@@ -295,6 +303,7 @@ class Script(scripts.Script):
         save_images: bool,
         show_caption: bool,
         use_grid: bool,
+        grid_per_image: bool,
         grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
@@ -303,7 +312,6 @@ class Script(scripts.Script):
         prompts,
         **kwargs,
     ):
-        print("Batch kwargs", kwargs)
         self.debug("Process batch")
         if not self.is_enabled(attention_texts, enabled):
             self.debug("not enabled")
@@ -319,7 +327,7 @@ class Script(scripts.Script):
             item[0] in self.attentions
             for item in self.prompt_analyzer.used_custom_terms
         ):
-            print("Embedding heatmap cannot be shown.")
+            info("Embedding heatmap cannot be shown.")
 
         tokenizer = self.get_tokenizer(p)
 
@@ -334,6 +342,11 @@ class Script(scripts.Script):
             sample_size=64,  # TODO: Update to proper sample size
             image_processor=to_pil_image,
             batch_size=p.batch_size,
+        )
+
+        info(
+            f"Trace attention heatmaps {','.join(self.attentions)} "
+            + f"for prompt {styled_prompt}"
         )
 
         self.heatmap_blend_alpha = alpha
@@ -353,6 +366,7 @@ class Script(scripts.Script):
         save_images: bool,
         show_caption: bool,
         use_grid: bool,
+        grid_per_image: bool,
         grid_layout: str,
         alpha: float,
         heatmap_image_scale: float,
@@ -395,11 +409,11 @@ class Script(scripts.Script):
         # heatmap_images = self.heatmap_images.keys()
 
         if len(self.heatmap_images.keys()) != len(images):
-            print(
-                "heatmap images",
-                len(self.heatmap_images.keys()),
-                self.heatmap_images.keys(),
-            )
+            # print(
+            #     "heatmap images",
+            #     len(self.heatmap_images.keys()),
+            #     self.heatmap_images.keys(),
+            # )
             # print(len(heatmap_images), len(images), heatmap_images, images)
             self.debug(
                 "Invalid result of images... images_list: "
@@ -424,12 +438,12 @@ class Script(scripts.Script):
             if heatmap_images and self.use_grid:
                 grid_img = self.make_grid(p, heatmap_images, layers_as_row)
 
-                if self.show_images:
+                if show_images:
                     processed.images.insert(0, grid_img)
                     processed.index_of_first_image += 1
                     processed.infotexts.insert(0, processed.infotexts[0])
 
-            if self.show_images:
+            if show_images:
                 processed.images[:0] = heatmap_images
                 processed.index_of_first_image += len(heatmap_images)
                 processed.infotexts[:0] = [processed.infotexts[0]] * len(
@@ -447,7 +461,7 @@ class Script(scripts.Script):
 
                 img_heatmap_grid_img = self.make_grid(
                     p,
-                    [heatmap_images] * [save_image_resized],
+                    heatmap_images + [save_image_resized],
                 )
             else:
                 save_image_resized = resize_image(
@@ -459,15 +473,14 @@ class Script(scripts.Script):
 
                 img_heatmap_grid_img = self.make_grid(
                     p,
-                    [heatmap_images] * [save_image_resized],
+                    heatmap_images + [save_image_resized],
                 )
 
-
-
-            # Insert grid images into processed list
-            processed.images.insert(0, img_heatmap_grid_img)
-            processed.index_of_first_image += 1
-            processed.infotexts.insert(0, processed.infotexts[0])
+            if show_images and grid_per_image:
+                # Insert grid images into processed list
+                processed.images.insert(0, img_heatmap_grid_img)
+                processed.index_of_first_image += 1
+                processed.infotexts.insert(0, processed.infotexts[0])
 
         return processed
 
@@ -631,7 +644,7 @@ class Script(scripts.Script):
         warning(err, message)
 
     def __getattr__(self, attr):
-        print("unknown call", attr)
+        warning("unknown call", attr)
         # import traceback
         # traceback.print_stack()
 
@@ -655,8 +668,6 @@ def calc_global_heatmap(
             "DAAM: Failed to get computed global heatmap for " + f" {prompt}",
         )
         return []
-
-    print(f"Got global heatmaps {global_heatmaps}")
 
     return global_heatmaps
 
