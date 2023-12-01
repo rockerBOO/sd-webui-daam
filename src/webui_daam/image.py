@@ -2,13 +2,14 @@ import numpy as np
 import math
 import torch
 from PIL import Image
-from typing import Union
+from typing import Union, List
 
 from daam.heatmap import GlobalHeatMap
 
 import matplotlib
 import matplotlib.pyplot as plt
 from .log import warning, debug
+from webui_daam.grid import make_grid, GridOpts, GRID_LAYOUT_AUTO
 
 matplotlib.use("Agg")
 
@@ -66,7 +67,7 @@ def plot_overlay_heat_map(
 
     if ax is None:
         plt_.gcf().set(
-            facecolor=opts['grid_background_color']
+            facecolor=opts["grid_background_color"]
             if opts is not None
             else "#fff",
             figwidth=width,
@@ -146,9 +147,9 @@ def create_plot_for_img(img, opts):
     if opts is not None:
         plt.rcParams.update(
             {
-                "text.color": opts['grid_text_active_color'],
-                "axes.labelcolor": opts['grid_background_color'],
-                "figure.facecolor": opts['grid_background_color'],
+                "text.color": opts["grid_text_active_color"],
+                "axes.labelcolor": opts["grid_background_color"],
+                "figure.facecolor": opts["grid_background_color"],
             }
         )
 
@@ -165,3 +166,73 @@ def fig2img(fig):
     buf.seek(0)
     img = Image.open(buf)
     return img
+
+
+# if save_images:
+#     save_image(
+#         grid_images, p.outpath_grids, "grid_daam", grid=True, p=p
+#     )
+
+# if show_images:
+#     images, infotexts, offset_idx += add_to_start(
+#         images, image, infotexts, infotexts[0]
+#     )
+
+
+def compile_processed_image(
+    image: Image.Image,
+    heatmap_images: List[Image.Image],
+    infotexts: List[str],
+    offset: int,
+    grid_opts: GridOpts,
+    use_grid=False,
+    grid_per_image=False,
+    show_images=False,
+):
+    grid_images = []
+    images = [image]
+    assert len(infotexts) > 0
+    offset = 0
+
+    # HEATMAP IMAGES
+    if heatmap_images and use_grid:
+        grid_images.append(make_grid(heatmap_images, grid_opts))
+
+    if show_images:
+        images, infotexts, offset = add_to_start(
+            images, heatmap_images, infotexts, infotexts[0], offset
+        )
+
+    # ORIGINAL IMAGES
+
+    if use_grid:
+        img_heatmap_grid_img = make_grid(
+            heatmap_images + [image], opts=grid_opts
+        )
+
+        grid_images.append(img_heatmap_grid_img)
+
+        if show_images and grid_per_image:
+            images, infotexts, offset = add_to_start(
+                images, img_heatmap_grid_img[0], infotexts, infotexts[0], offset
+            )
+
+    return images, infotexts, offset, grid_images
+
+
+def add_to_start(
+    images: List[Image.Image],
+    imgs: Union[List[Image.Image], Image.Image],
+    infotexts: List[str],
+    infotext: str,
+    offset: int,
+):
+    if isinstance(imgs, list):
+        images[:0] = imgs
+    else:
+        images.insert(0, imgs)
+
+    infotexts.insert(0, infotext)
+
+    offset += len(images) if isinstance(imgs, list) else 1
+    return images, infotexts, offset
