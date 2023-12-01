@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python install.py
+          pip install git+https://github.com/rockerBOO/daam@batch_size
       - name: Lint with Ruff
         run: |
           pip install ruff
