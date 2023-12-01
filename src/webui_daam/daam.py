@@ -35,6 +35,7 @@ from webui_daam.image import (
     create_heatmap_image_overlay,
 )
 from webui_daam.tokenizer import Tokenizer
+from webui_daam.grid import make_grid
 
 matplotlib.use("Agg")
 
@@ -375,7 +376,6 @@ class Script(scripts.Script):
         layers_as_row: bool,
         **kwargs,
     ):
-        # debug("Postprocess kwargs", kwargs)
         debug("Postprocess...")
         if self.is_enabled(attention_texts, enabled) is False:
             debug("disabled...")
@@ -387,13 +387,6 @@ class Script(scripts.Script):
 
         if initial_info is None:
             initial_info = processed.info
-
-        # images = processed.images
-        #
-        # print("PROCESSED ----")
-        # pprint(vars(processed))
-        # pprint(processed.images)
-        # pprint(processed.info)
 
         # Disable the handler from handling the hooking into the next images
         global before_image_saved_handler
@@ -411,20 +404,8 @@ class Script(scripts.Script):
 
         # heatmap_images = self.heatmap_images.keys()
 
-        # if len(self.heatmap_images.keys()) != len(processed.images):
-        #     # print(
-        #     #     "heatmap images",
-        #     #     len(self.heatmap_images.keys()),
-        #     #     self.heatmap_images.keys(),
-        #     # )
-        #     # print(len(heatmap_images), len(images), heatmap_images, images)
-        #     self.debug(
-        #         "Invalid result of images... heatmap_images: "
-        #         + f"{len(self.heatmap_images.keys())} images: {len(processed.images)}"
-        #     )
-
-        self.debug(f"Heatmap images: {len(self.heatmap_images.keys())}")
-        self.debug(f"Images: {len(processed.images)})")
+        debug(f"Heatmap images: {len(self.heatmap_images.keys())}")
+        debug(f"Images: {len(processed.images)})")
 
         debug(f"processed images: {processed.images}")
 
@@ -438,7 +419,20 @@ class Script(scripts.Script):
 
             # Add grid image
             if heatmap_images and self.use_grid:
-                grid_img = self.make_grid(p, heatmap_images, layers_as_row)
+                grid_img = make_grid(
+                    heatmap_images,
+                    grid_layout,
+                    p.batch_size,
+                    p.n_iter,
+                    num_attention_words=len(self.attentions),
+                    num_heatmap_images=len(self.heatmap_images.keys()),
+                    layers_as_row=layers_as_row,
+                )
+
+                if save_images:
+                    save_image(
+                        grid_img, p.outpath_grids, "grid_daam", grid=True, p=p
+                    )
 
                 if show_images:
                     processed.images.insert(0, grid_img)
@@ -461,9 +455,14 @@ class Script(scripts.Script):
                     height=heatmap_images[0].size[1],
                 )
 
-                img_heatmap_grid_img = self.make_grid(
-                    p,
+                img_heatmap_grid_img = make_grid(
                     heatmap_images + [save_image_resized],
+                    grid_layout,
+                    p.batch_size,
+                    p.n_iter,
+                    num_attention_words=len(self.attentions),
+                    num_heatmap_images=len(self.heatmap_images.keys()),
+                    layers_as_row=layers_as_row,
                 )
             else:
                 save_image_resized = resize_image(
@@ -473,9 +472,19 @@ class Script(scripts.Script):
                     height=heatmap_images[0].size[1],
                 )
 
-                img_heatmap_grid_img = self.make_grid(
-                    p,
+                img_heatmap_grid_img = make_grid(
                     heatmap_images + [save_image_resized],
+                    grid_layout,
+                    p.batch_size,
+                    p.n_iter,
+                    num_attention_words=len(self.attentions),
+                    num_heatmap_images=len(self.heatmap_images.keys()),
+                    layers_as_row=layers_as_row,
+                )
+
+            if save_image:
+                save_image(
+                    grid_img, p.outpath_grids, "grid_daam", grid=True, p=p
                 )
 
             if show_images and grid_per_image:
@@ -497,32 +506,6 @@ class Script(scripts.Script):
             return False
 
         return True
-
-    def make_grid(self, p, img_list, layers_as_row=False):
-        grid_layout = self.grid_layout
-        if grid_layout == Script.GRID_LAYOUT_AUTO:
-            if p.batch_size * p.n_iter == 1:
-                grid_layout = Script.GRID_LAYOUT_PREVENT_EMPTY
-            else:
-                grid_layout = Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW
-
-        if grid_layout == Script.GRID_LAYOUT_PREVENT_EMPTY:
-            grid_img = image_grid(img_list)
-        elif grid_layout == Script.GRID_LAYOUT_BATCH_LENGTH_AS_ROW:
-            if layers_as_row:
-                batch_size = len(self.attentions)
-                rows = len(self.heatmap_images.keys())
-            else:
-                batch_size = p.batch_size
-                rows = p.batch_size * p.n_iter
-            grid_img = image_grid(img_list, batch_size=batch_size, rows=rows)
-        else:
-            raise RuntimeError(f"Invalid grid layout: {grid_layout}")
-
-        if self.save_images:
-            save_image(grid_img, p.outpath_grids, "grid_daam", grid=True, p=p)
-
-        return grid_img
 
     def set_infotext_fields(self, p, params):
         pass
