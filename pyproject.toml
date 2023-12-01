@@ -1,0 +1,50 @@
+
+[tool.poetry]
+name = "sd-webui-daam"
+version = "0.1.0"
+description = ""
+authors = ["rockerBOO <rockerboo@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ["3.10.*", "3.11.*"]
+
+[tool.poetry.group.dev.dependencies]
+gradio = "3.41.2"
+numpy = "^1.26.2"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 79
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+pythonpath = [
+    "./src",
+]
+addopts = "--ignore=collections"
+markers = [
+	"slow"
+]
+
+[tool.coverage.run]
+branch = true
+omit = [
+    "install.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.black]
+line-length = 79
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

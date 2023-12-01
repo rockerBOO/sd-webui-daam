@@ -1,4 +1,10 @@
 .vscode/
 .env
+.venv/
+
+# Ignoring converage for now
+.coverage
+
+.ignore
 
 __pycache__/
