@@ -4,6 +4,8 @@ import torch
 from PIL import Image
 from typing import Union
 
+from daam.heatmap import GlobalHeatMap
+
 import matplotlib
 import matplotlib.pyplot as plt
 from .log import warning, debug
@@ -62,34 +64,40 @@ def plot_overlay_heat_map(
         else:
             ax.set_title(word)
 
-    plt_.gcf().set(
-        facecolor=opts.grid_background_color
-        if opts is not None
-        else "#fff",
-        figwidth=width,
-        figheight=height,
-    )
+    if ax is None:
+        plt_.gcf().set(
+            facecolor=opts['grid_background_color']
+            if opts is not None
+            else "#fff",
+            figwidth=width,
+            figheight=height,
+        )
 
-    img = fig2img(fig=plt_.gcf())
+        img = fig2img(fig=plt_.gcf())
+    else:
+        img = fig2img(fig=plt)
+
+    if out_file is not None:
+        img.save(out_file)
+
     return img
 
 
 def create_heatmap_image_overlay(
-    heatmap,
-    attention_word,
-    image,
+    heatmap: GlobalHeatMap,
+    attention_word: str,
+    image: Image.Image,
     show_word=True,
     alpha=1.0,
     batch_idx=0,
     opts=None,
 ):
     try:
-        debug("Heatmap for batch_idx: ", batch_idx)
         word_heatmap = heatmap.compute_word_heat_map(
             word=attention_word, batch_idx=batch_idx
         )
     except ValueError as e:
-        warning(e, f"Could not conpute the word heat map for {attention_word}")
+        warning(e, f"Could not compute the word heat map for {attention_word}")
         return
 
     img = plot_overlay_heat_map(
@@ -138,9 +146,9 @@ def create_plot_for_img(img, opts):
     if opts is not None:
         plt.rcParams.update(
             {
-                "text.color": opts.grid_text_active_color,
-                "axes.labelcolor": opts.grid_background_color,
-                "figure.facecolor": opts.grid_background_color,
+                "text.color": opts['grid_text_active_color'],
+                "axes.labelcolor": opts['grid_background_color'],
+                "figure.facecolor": opts['grid_background_color'],
             }
         )
 
@@ -157,4 +165,3 @@ def fig2img(fig):
     buf.seek(0)
     img = Image.open(buf)
     return img
-

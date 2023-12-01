@@ -34,6 +34,7 @@ from webui_daam.log import debug, info, warning, error, log
 from webui_daam.image import (
     create_heatmap_image_overlay,
 )
+from webui_daam.tokenizer import Tokenizer
 
 matplotlib.use("Agg")
 
@@ -374,8 +375,8 @@ class Script(scripts.Script):
         layers_as_row: bool,
         **kwargs,
     ):
-        debug("Postprocess kwargs", kwargs)
-        debug("postprocess...")
+        # debug("Postprocess kwargs", kwargs)
+        debug("Postprocess...")
         if self.is_enabled(attention_texts, enabled) is False:
             debug("disabled...")
             return
@@ -387,10 +388,12 @@ class Script(scripts.Script):
         if initial_info is None:
             initial_info = processed.info
 
-        images = processed.images
-
+        # images = processed.images
+        #
         # print("PROCESSED ----")
         # pprint(vars(processed))
+        # pprint(processed.images)
+        # pprint(processed.info)
 
         # Disable the handler from handling the hooking into the next images
         global before_image_saved_handler
@@ -408,30 +411,29 @@ class Script(scripts.Script):
 
         # heatmap_images = self.heatmap_images.keys()
 
-        if len(self.heatmap_images.keys()) != len(images):
-            # print(
-            #     "heatmap images",
-            #     len(self.heatmap_images.keys()),
-            #     self.heatmap_images.keys(),
-            # )
-            # print(len(heatmap_images), len(images), heatmap_images, images)
-            self.debug(
-                "Invalid result of images... images_list: "
-                + f"{len(self.heatmap_images.keys())} images: {len(images)}"
-            )
+        # if len(self.heatmap_images.keys()) != len(processed.images):
+        #     # print(
+        #     #     "heatmap images",
+        #     #     len(self.heatmap_images.keys()),
+        #     #     self.heatmap_images.keys(),
+        #     # )
+        #     # print(len(heatmap_images), len(images), heatmap_images, images)
+        #     self.debug(
+        #         "Invalid result of images... heatmap_images: "
+        #         + f"{len(self.heatmap_images.keys())} images: {len(processed.images)}"
+        #     )
 
         self.debug(f"Heatmap images: {len(self.heatmap_images.keys())}")
-        self.debug(f"Images: {len(images)}")
+        self.debug(f"Images: {len(processed.images)})")
 
         debug(f"processed images: {processed.images}")
 
-        all_images = []
-
         for (seed, heatmap_images), img in zip(
-            self.heatmap_images.items(), images
+            self.heatmap_images.items(), processed.images
         ):
             self.debug(
-                f"Processing seed {seed} heatmap_images {heatmap_images} img {img}"
+                f"Processing seed {seed} heatmap_images {heatmap_images} "
+                + f"img {img}"
             )
 
             # Add grid image
@@ -530,10 +532,13 @@ class Script(scripts.Script):
         #     }
         # )
 
+    # We get images one at a time before they are saved. In a batch we
+    # look at the batch_index to see which image in the batch we are processing
     @torch.no_grad()
     def before_image_saved(self, params: script_callbacks.ImageSaveParams):
         debug("Before image saved...")
 
+        # debug("PARAMS -=-=-=-=-=-=-=-=-=")
         # pprint(vars(params))
 
         if (
@@ -552,24 +557,49 @@ class Script(scripts.Script):
         if self.trace is None or len(self.attentions) == 0:
             return
 
-        prompt = shared.prompt_styles.apply_styles_to_prompt(
-            params.p.prompt, params.p.styles
-        )
+        # debug("Prompts????")
+        # pprint(vars(params.p))
 
-        debug(
-            f"batch_index: {params.p.batch_index} "
-            + f"batch_size: {params.p.batch_size}"
-        )
-        # print(
-        #     f"{params.p}, {self.trace}, {prompt}, "
-        #     + f"{self.trace_each_layers}"
-        # )
-        if params.p.batch_index == 0:
-            self.global_heat_maps = calc_global_heatmap(
-                params.p, self.trace, prompt, self.trace_each_layers
-            )
+        batch_size = params.p.batch_size
 
+        # In a batch, which index are we on.
+        batch_idx = params.p.batch_index
+
+        # Batch count number
+        n_iter = params.p.n_iter
+
+        # Iteration number of the batch count (of n_iter)
+        iteration = params.p.iteration
+
+        # seed of the image we are currently processing
         seed = params.p.seeds[params.p.batch_index]
+
+        # Num input/output blocks for tracing the layers
+        num_input_blocks = len(
+            params.p.sd_model.model.diffusion_model.input_blocks
+        )
+        num_output_blocks = len(
+            params.p.sd_model.model.diffusion_model.output_blocks
+        )
+
+        prompts = [
+            shared.prompt_styles.apply_styles_to_prompt(
+                prompt, params.p.styles
+            )
+            for prompt in params.p.prompts
+        ]
+
+        debug(f"iterations: {iteration+1} / {n_iter}")
+        debug(f"batch: {batch_idx+1} / {batch_size}")
+
+        if batch_idx == 0:
+            self.global_heat_maps = calc_global_heatmap(
+                self.trace,
+                prompts[batch_idx],
+                trace_each_layer=self.trace_each_layers,
+                num_input_blocks=num_input_blocks,
+                num_output_blocks=num_output_blocks,
+            )
 
         for global_heat_map in self.global_heat_maps:
             debug(
@@ -650,15 +680,21 @@ class Script(scripts.Script):
 
 
 def calc_global_heatmap(
-    p: StableDiffusionProcessing, trace, prompt, trace_each_layers=False
+    trace,
+    prompt,
+    num_input_blocks,
+    num_output_blocks,
+    trace_each_layer=False,
 ):
     try:
-        num_input = len(p.sd_model.model.diffusion_model.input_blocks)
-        num_output = len(p.sd_model.model.diffusion_model.output_blocks)
-        if trace_each_layers:
+        debug("Global heatmap using prompt:")
+        debug(f"prompt: {prompt}")
+        if trace_each_layer:
             global_heatmaps = [
-                trace.compute_global_heat_map(prompt, layer_i_mapdx=layer_idx)
-                for layer_idx in range(num_input + 1 + num_output)
+                trace.compute_global_heat_map(prompt, layer_idx=layer_idx)
+                for layer_idx in range(
+                    num_input_blocks + 1 + num_output_blocks
+                )
             ]
         else:
             global_heatmaps = [trace.compute_global_heat_map(prompt)]
@@ -735,15 +771,6 @@ def on_infotext_pasted(infotext, params):
 
 script_callbacks.on_before_image_saved(on_before_image_saved)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
-
-
-# Emulating hugging face tokenizer
-class Tokenizer:
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-
-    def tokenize(self, prompt):
-        return self.tokenizer(prompt)
 
 
 def calc_context_size(token_length: int):
