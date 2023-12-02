@@ -59,25 +59,22 @@ def plot_overlay_heat_map(
     heat_map = heat_map.permute(1, 0)  # swap width/height to match numpy array
     # shape height, width
 
-    # if crop is not None:
-    #     heat_map = heat_map[crop:-crop, crop:-crop]
-    #     im = im[crop:-crop, crop:-crop]
+    if crop is not None:
+        heat_map = heat_map[crop:-crop, crop:-crop]
+        im = im[crop:-crop, crop:-crop]
 
     if color_normalize:
         plt_.imshow(heat_map.cpu().numpy(), cmap="jet")
     else:
-        heat_map = heat_map.clamp_(min=0, max=1)
+        heat_map = heat_map.clamp_(min=-1, max=1)
         plt_.imshow(heat_map.cpu().numpy(), cmap="jet", vmin=0.0, vmax=1.0)
 
     if isinstance(im, Image.Image):
         im = np.array(im)
         im = torch.from_numpy(im).float() / 255
     elif isinstance(im, torch.Tensor):
+        # Tensor comes in channel, width, height to width, height, channel
         im = im.permute(1, 2, 0)
-
-    # we are getting a 2 dimensional image. maybe not a good thing to do here.
-    # if len(im) == 2:
-    #     im = im.unsqueeze(-1)
 
     im = torch.cat((im, (1 - (heat_map.unsqueeze(-1) * alpha))), dim=-1)
 

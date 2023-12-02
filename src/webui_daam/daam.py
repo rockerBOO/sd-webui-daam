@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-import re
-from itertools import chain
-from pathlib import Path
-from pprint import pprint
-
 import gradio as gr
 import matplotlib
 import modules.scripts as scripts
@@ -18,15 +13,11 @@ from modules import (
     sd_hijack_clip,
     sd_hijack_open_clip,
 )
-from modules.images import image_grid, resize_image, save_image
+from modules.images import image_grid, save_image
 from modules.processing import (
     StableDiffusionProcessing,
     fix_seed,
 )
-from modules.sd_hijack_clip import (
-    FrozenCLIPEmbedderWithCustomWordsBase,
-)
-from modules.sd_hijack_open_clip import FrozenOpenCLIPEmbedderWithCustomWords
 from modules.shared import opts
 from transformers.image_transforms import to_pil_image
 
@@ -36,12 +27,11 @@ from webui_daam.image import (
     compile_processed_image,
 )
 from webui_daam.tokenizer import Tokenizer
-from webui_daam.grid import make_grid, GridOpts, GRID_LAYOUT_AUTO
+from webui_daam.prompt import PromptAnalyzer, calc_context_size, escape_prompt
+from webui_daam.grid import GridOpts, GRID_LAYOUT_AUTO
+from webui_daam.heatmap import calc_global_heatmap
 
 matplotlib.use("Agg")
-
-global before_image_saved_handler
-before_image_saved_handler = None
 
 addnet_paste_params = {"txt2img": [], "img2img": []}
 
@@ -190,14 +180,9 @@ class Script(scripts.Script):
         layers_as_row: bool,
     ):
         self.enabled = False  # in case the assert fails
+
+        # Panicing level of unhooking...
         self.try_unhook()
-
-        def handle_before_image_saved(params):
-            self.trace_each_layers = trace_each_layers
-            self.before_image_saved(params)
-
-        global before_image_saved_handler
-        before_image_saved_handler = handle_before_image_saved
 
         self.debug("DAAM Process...")
 
@@ -490,10 +475,6 @@ class Script(scripts.Script):
         if initial_info is None:
             initial_info = processed.info
 
-        # Disable the handler from handling the hooking into the next images
-        global before_image_saved_handler
-        before_image_saved_handler = None
-
         # if layers_as_row:
         #     heatmap_images = []
         #     for k in sorted(self.heatmap_images.keys()):
@@ -507,7 +488,9 @@ class Script(scripts.Script):
         # heatmap_images = self.heatmap_images.keys()
 
         debug(
-            f"Heatmap images: {[len(hm_imgs) for hm_imgs in self.heatmap_images.values()]} attentions {len(self.attentions)}"
+            "Heatmap images: "
+            + f"{[len(hm_imgs) for hm_imgs in self.heatmap_images.values()]} "
+            + f"attentions {len(self.attentions)}"
         )
         debug(f"Images: {len(processed.images)}")
 
@@ -580,10 +563,6 @@ class Script(scripts.Script):
 
         return processed
 
-    # @property
-    # def trace(self):
-    #     return self.trace
-
     def is_enabled(self, attention_texts, enabled):
         if self.enabled is False:
             return False
@@ -603,133 +582,6 @@ class Script(scripts.Script):
         #         f"AddNet Weight B {i+1}": weight_tenc,
         #     }
         # )
-
-    # We get images one at a time before they are saved. In a batch we
-    # look at the batch_index to see which image in the batch we are processing
-    @torch.no_grad()
-    def before_image_saved(self, params: script_callbacks.ImageSaveParams):
-        debug("Before image saved...")
-
-        # debug("PARAMS -=-=-=-=-=-=-=-=-=")
-        # pprint(vars(params))
-
-        if (
-            "txt2img-grid" in params.filename
-            or "img2img-grid" in params.filename
-        ):
-            debug("Skipping because it's a grid. Maybe not ideal?")
-            return
-
-        if self.trace is None:
-            debug("No trace")
-
-        if len(self.attentions) == 0:
-            debug("No attentions to heatmap")
-
-        if self.trace is None or len(self.attentions) == 0:
-            return
-
-        # debug("Prompts????")
-        # pprint(vars(params.p))
-
-        batch_size = params.p.batch_size
-
-        # In a batch, which index are we on.
-        batch_idx = params.p.batch_index
-
-        # Batch count number
-        n_iter = params.p.n_iter
-
-        # Iteration number of the batch count (of n_iter)
-        iteration = params.p.iteration
-
-        # seed of the image we are currently processing
-        seed = params.p.seeds[params.p.batch_index]
-
-        # Num input/output blocks for tracing the layers
-        num_input_blocks = len(
-            params.p.sd_model.model.diffusion_model.input_blocks
-        )
-        num_output_blocks = len(
-            params.p.sd_model.model.diffusion_model.output_blocks
-        )
-
-        prompts = [
-            shared.prompt_styles.apply_styles_to_prompt(
-                prompt, params.p.styles
-            )
-            for prompt in params.p.prompts
-        ]
-
-        debug(f"iterations: {iteration+1} / {n_iter}")
-        debug(f"batch: {batch_idx+1} / {batch_size}")
-
-        if batch_idx == 0:
-            self.global_heat_maps = calc_global_heatmap(
-                self.trace,
-                prompts[batch_idx],
-                trace_each_layer=self.trace_each_layers,
-                num_input_blocks=num_input_blocks,
-                num_output_blocks=num_output_blocks,
-            )
-
-        for global_heat_map in self.global_heat_maps:
-            debug(
-                f"Global heatmap ({len(global_heat_map.heat_maps)}) "
-                + f"for {global_heat_map.prompt} "
-            )
-            heatmap_images = []
-
-            for attention in self.attentions:
-                debug(
-                    f"Batch id: {params.p.batch_index} "
-                    + f"attention: {attention}"
-                )
-
-                img = create_heatmap_image_overlay(
-                    global_heat_map,
-                    attention,
-                    image=params.image,
-                    show_word=self.show_caption,
-                    alpha=self.heatmap_blend_alpha,
-                    batch_idx=params.p.batch_index,
-                    opts=opts,
-                )
-
-                heatmap_images.append(img)
-
-                if self.save_images:
-                    save_image(
-                        img,
-                        params.p.outpath_samples,
-                        "daam",
-                        grid=False,
-                        p=params.p,
-                    )
-
-            if len(heatmap_images) != len(self.attentions):
-                warning(
-                    f"Heatmap images ({len(heatmap_images)}) not matching # of attentions ({len(self.attentions)})"
-                )
-
-            self.heatmap_images[seed] = heatmap_images
-
-        if len(self.heatmap_images[seed]) == 0:
-            info("DAAM: Did not create any heatmap images.")
-
-        # self.heatmap_images = {
-        #     j: self.heatmap_images[j]
-        #     for j in self.heatmap_images.keys()
-        #     if self.heatmap_images[j]
-        # }
-
-        # if it is last batch pos, clear heatmaps
-        # if batch_pos == params.p.batch_size - 1:
-        #     for tracer in self.traces:
-        #         tracer.reset()
-
-        self.try_unhook()
-        return params
 
     def try_unhook(self):
         if self.trace is not None:
@@ -757,44 +609,6 @@ class Script(scripts.Script):
         # import traceback
         #
         # traceback.print_stack()
-
-
-def calc_global_heatmap(
-    trace,
-    prompts,
-    num_input_blocks,
-    num_output_blocks,
-    trace_each_layer=False,
-):
-    try:
-        debug("Global heatmap using prompt:")
-        debug(f"prompt: {prompts}")
-        if trace_each_layer:
-            global_heatmaps = [
-                trace.compute_global_heat_map(prompts, layer_idx=layer_idx)
-                for layer_idx in range(
-                    num_input_blocks + 1 + num_output_blocks
-                )
-            ]
-        else:
-            global_heatmaps = [trace.compute_global_heat_map(prompts)]
-    except RuntimeError as err:
-        warning(
-            err,
-            "DAAM: Failed to get computed global heatmap for " + f" {prompts}",
-        )
-        return []
-
-    return global_heatmaps
-
-
-@torch.no_grad()
-def on_before_image_saved(params):
-    global before_image_saved_handler
-    if before_image_saved_handler is not None:
-        return before_image_saved_handler(params)
-
-    return
 
 
 def on_script_unloaded():
@@ -849,129 +663,4 @@ def on_infotext_pasted(infotext, params):
     #     )
 
 
-# script_callbacks.on_before_image_saved(on_before_image_saved)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
-
-
-def calc_context_size(token_length: int):
-    len_check = 0 if (token_length - 1) < 0 else token_length - 1
-    return ((int)(len_check // 75) + 1) * 77
-
-
-def escape_prompt(prompt):
-    if isinstance(prompt, str):
-        prompt = prompt.lower()
-        prompt = re.sub(r"[\(\)\[\]]", "", prompt)
-        prompt = re.sub(r":\d+\.*\d*", "", prompt)
-        return prompt
-    elif isinstance(prompt, list):
-        prompt_new = []
-        for i in range(len(prompt)):
-            prompt_new.append(escape_prompt(prompt[i]))
-        return prompt_new
-
-
-class PromptAnalyzer:
-    def __init__(self, clip: FrozenCLIPEmbedderWithCustomWordsBase, text: str):
-        use_old = opts.use_old_emphasis_implementation
-        assert not use_old, "use_old_emphasis_implementation is not supported"
-
-        self.clip = clip
-        self.id_start = clip.id_start
-        self.id_end = clip.id_end
-        self.is_open_clip = (
-            True
-            if isinstance(clip, FrozenOpenCLIPEmbedderWithCustomWords)
-            else False
-        )
-        self.used_custom_terms = []
-        self.hijack_comments = []
-
-        chunks, token_count = self.tokenize_line(text)
-
-        self.token_count = token_count
-        self.fixes = list(chain.from_iterable(chunk.fixes for chunk in chunks))
-        self.context_size = calc_context_size(token_count)
-
-        tokens = list(chain.from_iterable(chunk.tokens for chunk in chunks))
-        multipliers = list(
-            chain.from_iterable(chunk.multipliers for chunk in chunks)
-        )
-
-        self.tokens = []
-        self.multipliers = []
-        for i in range(self.context_size // 77):
-            self.tokens.extend(
-                [self.id_start] + tokens[i * 75 : i * 75 + 75] + [self.id_end]
-            )
-            self.multipliers.extend(
-                [1.0] + multipliers[i * 75 : i * 75 + 75] + [1.0]
-            )
-
-    def create(self, text: str):
-        return PromptAnalyzer(self.clip, text)
-
-    def tokenize_line(self, line):
-        chunks, token_count = self.clip.tokenize_line(line)
-        return chunks, token_count
-
-    def process_text(self, texts):
-        (
-            batch_multipliers,
-            remade_batch_tokens,
-            used_custom_terms,
-            hijack_comments,
-            hijack_fixes,
-            token_count,
-        ) = self.clip.process_text(texts)
-        return (
-            batch_multipliers,
-            remade_batch_tokens,
-            used_custom_terms,
-            hijack_comments,
-            hijack_fixes,
-            token_count,
-        )
-
-    def encode(self, text: str):
-        return self.clip.tokenize([text])[0]
-
-    def calc_word_indecies(self, word: str, limit: int = -1, start_pos=0):
-        word = word.lower()
-        merge_idxs = []
-
-        tokens = self.tokens
-        needles = self.encode(word)
-
-        limit_count = 0
-        current_pos = 0
-        for i, token in enumerate(tokens):
-            current_pos = i
-            if i < start_pos:
-                continue
-
-            if needles[0] == token and len(needles) > 1:
-                next = i + 1
-                success = True
-                for needle in needles[1:]:
-                    if next >= len(tokens) or needle != tokens[next]:
-                        success = False
-                        break
-                    next += 1
-
-                # append consecutive indexes if all pass
-                if success:
-                    merge_idxs.extend(list(range(i, next)))
-                    if limit > 0:
-                        limit_count += 1
-                        if limit_count >= limit:
-                            break
-
-            elif needles[0] == token:
-                merge_idxs.append(i)
-                if limit > 0:
-                    limit_count += 1
-                    if limit_count >= limit:
-                        break
-
-        return merge_idxs, current_pos
