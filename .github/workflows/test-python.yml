@@ -23,4 +23,5 @@ jobs:
           python -m pip install pytest-cov
           pip install matplotlib==3.6.2
           pip install git+https://github.com/rockerBOO/daam@boo
+          pip install torch
       - run: pytest --cov --cov-report=term-missing .
