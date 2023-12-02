@@ -43,6 +43,7 @@ attention text: "woman, sunglasses, old fashioned jukebox"
 
 - Batch size works but isn't lining up with the right areas.
 - Grids may have different images mixed together, especially bad in combo with batches.
+- Certain resolutions may result in a `view of [16, 29, 39]` not working. Try changing the resolution. Please feel free to make a ticket with the error and resolution you were trying.
 
 ## Changelog
 
