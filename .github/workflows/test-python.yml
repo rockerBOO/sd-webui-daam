@@ -26,5 +26,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install pytest-cov
-          python install.py
+          pip install matplotlib==3.6.2
+          pip install git+https://github.com/rockerBOO/daam@boo
       - run: pytest --cov --cov-report=term-missing .
