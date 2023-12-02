@@ -1,29 +1,37 @@
-import numpy as np
 import math
-import torch
-from PIL import Image
-from typing import Union, List
-
-from daam.heatmap import GlobalHeatMap
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Union
 
 import matplotlib
 import matplotlib.pyplot as plt
-from .log import warning, debug
-from webui_daam.grid import make_grid, GridOpts, GRID_LAYOUT_AUTO
+import numpy as np
+import torch
+from daam.heatmap import GlobalHeatMap
+from PIL import Image
+
+from webui_daam.grid import GRID_LAYOUT_AUTO, GridOpts, make_grid
+
+from .log import debug, warning
 
 matplotlib.use("Agg")
 
 
+@dataclass
+class Opts:
+    grid_background_color: str = "white"
+    grid_text_active_color: str = "black"
+
+
 def plot_overlay_heat_map(
-    im: Image,
+    im: Image.Image,
     heat_map: torch.Tensor,
     word: Union[None, str] = None,
     out_file=None,
-    crop=None,
+    crop: Optional[bool] = None,
     color_normalize: bool = True,
-    ax=None,
-    alpha=1.0,
-    opts=None,
+    ax: Optional[plt.Axes] = None,
+    alpha: Optional[float] = 1.0,
+    opts: Optional[Opts] = None,
 ):
     # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
     dpi = 100
@@ -168,17 +176,6 @@ def fig2img(fig):
     return img
 
 
-# if save_images:
-#     save_image(
-#         grid_images, p.outpath_grids, "grid_daam", grid=True, p=p
-#     )
-
-# if show_images:
-#     images, infotexts, offset_idx += add_to_start(
-#         images, image, infotexts, infotexts[0]
-#     )
-
-
 def compile_processed_image(
     image: Image.Image,
     heatmap_images: List[Image.Image],
@@ -188,19 +185,22 @@ def compile_processed_image(
     use_grid=False,
     grid_per_image=False,
     show_images=False,
-):
-    grid_images = []
+) -> Tuple[
+    List[Image.Image], List[str], int, List[Tuple[List[Image.Image], int, int]]
+]:
+    grid_images_list = []
     images = [image]
     infotexts = [infotext]
     offset = 0
 
     # HEATMAP IMAGES
+
     if heatmap_images and use_grid:
-        grid_images.append(make_grid(heatmap_images, grid_opts))
+        grid_images_list.append(make_grid(heatmap_images, grid_opts))
 
     if show_images:
         images, infotexts, offset = add_to_start(
-            images, heatmap_images, infotexts, infotexts[0], offset
+            images, heatmap_images, infotexts, infotext, offset
         )
 
     # ORIGINAL IMAGES
@@ -210,14 +210,15 @@ def compile_processed_image(
             heatmap_images + [image], opts=grid_opts
         )
 
-        grid_images.append(img_heatmap_grid_img)
+        grid_images_list.append(img_heatmap_grid_img)
 
         if show_images and grid_per_image:
             images, infotexts, offset = add_to_start(
-                images, img_heatmap_grid_img[0], infotexts, infotexts[0], offset
+                #       getting the list of grid images
+                images, img_heatmap_grid_img[0], infotexts, infotext, offset
             )
 
-    return images, infotexts, offset, grid_images
+    return images, infotexts, offset, grid_images_list
 
 
 def add_to_start(
@@ -226,11 +227,13 @@ def add_to_start(
     infotexts: List[str],
     infotext: str,
     offset: int,
-):
+) -> Tuple[List[Image.Image], List[str], int]:
     if isinstance(imgs, list):
         images[:0] = imgs
     else:
         images.insert(0, imgs)
+
+    assert isinstance(infotext, list) is False
 
     infotexts.insert(0, infotext)
 

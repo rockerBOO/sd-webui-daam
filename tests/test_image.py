@@ -12,6 +12,7 @@ from webui_daam.image import (
     create_heatmap_image_overlay,
     compile_processed_image,
     add_to_start,
+    Opts,
 )
 from webui_daam.grid import GridOpts, GRID_LAYOUT_AUTO
 
@@ -156,11 +157,6 @@ def test_batch_idx_parameter(sample_global_heatmap, sample_image):
 
 
 def test_opts_parameter(sample_global_heatmap, sample_image):
-    @dataclass
-    class Opts
-        grid_background_color: str = "red"
-        grid_text_active_color: str = "red"
-
     # Test with additional options (opts)
     img = create_heatmap_image_overlay(
         sample_global_heatmap,
@@ -208,7 +204,7 @@ def test_compile_processed_image_default(
     images, infotexts, offset, grid_images = compile_processed_image(
         sample_image,
         sample_heatmap_images,
-        sample_infotexts,
+        sample_infotexts[0],
         0,
         sample_grid_opts,
     )
@@ -225,13 +221,13 @@ def test_compile_processed_image_show_images(
     images, infotexts, offset, grid_images = compile_processed_image(
         sample_image,
         sample_heatmap_images,
-        sample_infotexts,
+        sample_infotexts[0],
         0,
         sample_grid_opts,
         show_images=True,
     )
     assert images == sample_heatmap_images + [sample_image]
-    assert infotexts == sample_infotexts
+    assert infotexts == sample_infotexts + sample_infotexts
     assert offset == 4
     assert grid_images == []
 
@@ -243,7 +239,7 @@ def test_compile_processed_image_use_grid(
     images, infotexts, offset, grid_images = compile_processed_image(
         sample_image,
         sample_heatmap_images,
-        sample_infotexts,
+        sample_infotexts[0],
         0,
         sample_grid_opts,
         use_grid=True,
@@ -261,7 +257,7 @@ def test_compile_processed_image_use_grid_per_image(
     images, infotexts, offset, grid_images = compile_processed_image(
         sample_image,
         sample_heatmap_images,
-        sample_infotexts,
+        sample_infotexts[0],
         0,
         sample_grid_opts,
         use_grid=True,

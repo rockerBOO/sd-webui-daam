@@ -418,11 +418,16 @@ class Script(scripts.Script):
                 + f"img {img}"
             )
 
-            images, infotexts, offset, grid_images = compile_processed_image(
+            (
+                images,
+                infotexts,
+                offset,
+                grid_images_list,
+            ) = compile_processed_image(
                 img,
                 heatmap_images,
                 processed.infotexts[p.batch_index],
-                offset=0,
+                offset=processed.index_of_first_image,
                 grid_opts=GridOpts(
                     layout=GRID_LAYOUT_AUTO,
                     batch_size=p.batch_size,
@@ -431,25 +436,37 @@ class Script(scripts.Script):
                     num_heatmap_images=len(self.heatmap_images.keys()),
                     layers_as_row=layers_as_row,
                 ),
+                use_grid=use_grid,
+                grid_per_image=grid_per_image,
             )
 
             # save grid images
-            if save_image and use_grid:
-                for grid_image, batch_size, rows in grid_images:
-                    save_image(
-                        grid_image,
-                        p.outpaths_grids,
-                        "grid_daam",
-                        grid=True,
-                        p=p,
+            if use_grid:
+                for grid_images, batch_size, rows in grid_images_list:
+                    grid_image = image_grid(
+                        grid_images, batch_size=batch_size, rows=rows
                     )
+                    print(f"Grid image {grid_image}")
+
+                    if save_images:
+                        save_image(
+                            grid_image,
+                            p.outpath_grids,
+                            "grid_daam",
+                            grid=True,
+                            p=p,
+                        )
+
+                    if show_images:
+                        images.append(grid_image)
+                        # naively adding the first infotext to the grid image
+                        infotexts.append(infotexts[0])
 
             debug(
                 f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images)}"
             )
             debug(f"Images {images}")
             debug(f"Infotext {infotexts}")
-            debug(f"Grid images {grid_images}")
 
             # Add new images to the start of the processed image list
             processed.images[:0] = images
