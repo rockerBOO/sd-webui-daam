@@ -41,6 +41,6 @@ def check_daam():
 
 if not check_daam():
     launch.run_pip(
-        "install git+https://github.com/rockerBOO/daam@boo",
+        "install git+https://github.com/rockerBOO/daam",
         desc="DAAM library",
     )

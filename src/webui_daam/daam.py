@@ -51,6 +51,9 @@ class Script(scripts.Script):
     GRID_LAYOUT_PREVENT_EMPTY = "Prevent Empty Spot"
     GRID_LAYOUT_BATCH_LENGTH_AS_ROW = "Batch Length As Row"
 
+    def __init__(self):
+        self.trace = None
+
     def title(self):
         return "DAAM script"
 
@@ -61,23 +64,6 @@ class Script(scripts.Script):
 
     def show(self, is_img2img):
         return scripts.AlwaysVisible
-
-    def run(
-        self,
-        p: StableDiffusionProcessing,
-        attention_texts: str,
-        enabled: bool,
-        show_images: bool,
-        save_images: bool,
-        show_caption: bool,
-        use_grid: bool,
-        grid_layout: str,
-        alpha: float,
-        heatmap_image_scale: float,
-        trace_each_layers: bool,
-        layers_as_row: bool,
-    ):
-        print("RUN!")
 
     def ui(self, is_img2img):
         with gr.Group():
@@ -204,6 +190,7 @@ class Script(scripts.Script):
         layers_as_row: bool,
     ):
         self.enabled = False  # in case the assert fails
+        self.try_unhook()
 
         def handle_before_image_saved(params):
             self.trace_each_layers = trace_each_layers
@@ -237,7 +224,7 @@ class Script(scripts.Script):
             if s.strip() and len(s.strip()) > 0
         ]
         self.enabled = len(self.attentions) > 0 and enabled
-        self.trace = None
+        self.try_unhook()
 
         fix_seed(p)
 
@@ -315,6 +302,7 @@ class Script(scripts.Script):
         prompts,
         **kwargs,
     ):
+        self.try_unhook()
         self.debug("Process batch")
         if not self.is_enabled(attention_texts, enabled):
             self.debug("not enabled")
@@ -359,6 +347,53 @@ class Script(scripts.Script):
 
         # self.set_infotext_fields(p, self.latest_params)
 
+    def postprocess_batch(
+        self,
+        p: StableDiffusionProcessing,
+        attention_texts: str,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
+        use_grid: bool,
+        grid_per_image: bool,
+        grid_layout: str,
+        alpha: float,
+        heatmap_image_scale: float,
+        trace_each_layers: bool,
+        layers_as_row: bool,
+        *args,
+        **kwargs,
+    ):
+        debug("POSTPROCESS BATCH")
+        # pprint(kwargs)
+
+    def postprocess_batch_list(
+        self,
+        p,
+        pp: scripts.PostprocessBatchListArgs,
+        attention_texts: str,
+        enabled: bool,
+        show_images: bool,
+        save_images: bool,
+        show_caption: bool,
+        use_grid: bool,
+        grid_per_image: bool,
+        grid_layout: str,
+        alpha: float,
+        heatmap_image_scale: float,
+        trace_each_layers: bool,
+        layers_as_row: bool,
+        *args,
+        **kwargs,
+    ):
+        debug(
+            "POSTPROCESS BATCH LIST",
+        )
+        # pprint(args)
+        # pprint(kwargs)
+        # pprint(vars(pp))
+
     @torch.no_grad()
     def postprocess(
         self,
@@ -378,12 +413,11 @@ class Script(scripts.Script):
         layers_as_row: bool,
         **kwargs,
     ):
+        self.try_unhook()
         debug("Postprocess...")
         if self.is_enabled(attention_texts, enabled) is False:
             debug("disabled...")
             return
-
-        self.try_unhook()
 
         initial_info = None
 
@@ -479,6 +513,10 @@ class Script(scripts.Script):
             processed.infotexts[:0] = infotexts
 
         return processed
+
+    # @property
+    # def trace(self):
+    #     return self.trace
 
     def is_enabled(self, attention_texts, enabled):
         if self.enabled is False:
@@ -631,6 +669,7 @@ class Script(scripts.Script):
         if self.trace is not None:
             try:
                 self.trace.unhook()
+                self.trace = None
             # Possibly not hooked and we are only attempting to unhook
             except RuntimeError:
                 pass
@@ -650,6 +689,7 @@ class Script(scripts.Script):
     def __getattr__(self, attr):
         warning("unknown call", attr)
         # import traceback
+        #
         # traceback.print_stack()
 
 
