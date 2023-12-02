@@ -347,10 +347,11 @@ class Script(scripts.Script):
             batch_size=p.batch_size,
         )
 
-        info(
-            f"Trace attention heatmaps {','.join(self.attentions)} "
-            + f"for prompt {styled_prompt}"
-        )
+        info("Trace attention heatmaps for prompt: ")
+        info(f"\t{styled_prompt}")
+        info("Attention words: ")
+        for attn in self.attentions:
+            info(f"\t{attn}")
 
         self.heatmap_blend_alpha = alpha
 
@@ -405,18 +406,21 @@ class Script(scripts.Script):
 
         # heatmap_images = self.heatmap_images.keys()
 
-        debug(f"Heatmap images: {len(self.heatmap_images.keys())}")
-        debug(f"Images: {len(processed.images)})")
+        debug(
+            f"Heatmap images: {[len(hm_imgs) for hm_imgs in self.heatmap_images.values()]} attentions {len(self.attentions)}"
+        )
+        debug(f"Images: {len(processed.images)}")
 
         debug(f"processed images: {processed.images}")
 
         for (seed, heatmap_images), img in zip(
             self.heatmap_images.items(), processed.images
         ):
-            self.debug(
-                f"Processing seed {seed} heatmap_images {heatmap_images} "
-                + f"img {img}"
-            )
+            if processed.seed != seed:
+                debug(f"INVALID SEED processed {processed.seed} {seed}")
+            debug(f"Processing seed {seed} ")
+            debug(f"heatmap_images {heatmap_images}")
+            debug(f"img {img}")
 
             (
                 images,
@@ -438,6 +442,7 @@ class Script(scripts.Script):
                 ),
                 use_grid=use_grid,
                 grid_per_image=grid_per_image,
+                show_images=show_images,
             )
 
             # save grid images
@@ -446,7 +451,6 @@ class Script(scripts.Script):
                     grid_image = image_grid(
                         grid_images, batch_size=batch_size, rows=rows
                     )
-                    print(f"Grid image {grid_image}")
 
                     if save_images:
                         save_image(
@@ -461,15 +465,17 @@ class Script(scripts.Script):
                         images.append(grid_image)
                         # naively adding the first infotext to the grid image
                         infotexts.append(infotexts[0])
+                        offset += 1
 
             debug(
-                f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images)}"
+                f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images_list)}"
             )
             debug(f"Images {images}")
-            debug(f"Infotext {infotexts}")
+            # debug(f"Infotext {infotexts}")
 
             # Add new images to the start of the processed image list
             processed.images[:0] = images
+            processed.index_of_first_image += offset
             processed.infotexts[:0] = infotexts
 
         return processed
@@ -589,12 +595,18 @@ class Script(scripts.Script):
                 heatmap_images.append(img)
 
                 if self.save_images:
-                    filename = Path(params.filename)
-                    attention_caption_filename = filename.with_name(
-                        f"{filename.stem}_{attention}{filename.suffix}"
+                    save_image(
+                        img,
+                        params.p.outpath_samples,
+                        "daam",
+                        grid=False,
+                        p=params.p,
                     )
 
-                    img.save(attention_caption_filename)
+            if len(heatmap_images) != len(self.attentions):
+                warning(
+                    f"Heatmap images ({len(heatmap_images)}) not matching # of attentions ({len(self.attentions)})"
+                )
 
             self.heatmap_images[seed] = heatmap_images
 

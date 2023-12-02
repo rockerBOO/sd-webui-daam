@@ -189,19 +189,19 @@ def compile_processed_image(
     List[Image.Image], List[str], int, List[Tuple[List[Image.Image], int, int]]
 ]:
     grid_images_list = []
-    images = [image]
-    infotexts = [infotext]
+    images = []
+    infotexts = []
     offset = 0
 
     # HEATMAP IMAGES
 
-    if heatmap_images and use_grid:
-        grid_images_list.append(make_grid(heatmap_images, grid_opts))
+    # if heatmap_images and use_grid:
+    #     grid_images_list.append(make_grid(heatmap_images, grid_opts))
 
     if show_images:
-        images, infotexts, offset = add_to_start(
-            images, heatmap_images, infotexts, infotext, offset
-        )
+        images.extend(heatmap_images)
+        infotexts.extend([infotext] * len(heatmap_images))
+        offset += len(heatmap_images)
 
     # ORIGINAL IMAGES
 
@@ -212,11 +212,15 @@ def compile_processed_image(
 
         grid_images_list.append(img_heatmap_grid_img)
 
-        if show_images and grid_per_image:
-            images, infotexts, offset = add_to_start(
-                #       getting the list of grid images
-                images, img_heatmap_grid_img[0], infotexts, infotext, offset
-            )
+        # if show_images:
+        # images.append(img_heatmap_grid_img[0])
+        # infotexts.append(infotext)
+        # offset += 1
+        # if  and grid_per_image:
+        #     images, infotexts, offset = add_to_start(
+        #         #       getting the list of grid images
+        #         images, img_heatmap_grid_img[0], infotexts, infotext, offset
+        #     )
 
     return images, infotexts, offset, grid_images_list
 

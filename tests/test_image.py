@@ -26,7 +26,7 @@ def sample_global_heatmap():
     # Sample GlobalHeatMap for testing
     tokenizer = lambda x: x.split()  # Example tokenizer function
     prompt = "Test prompt word"
-    heat_maps = torch.randn((3, 5, 5))  # Example heat maps tensor
+    heat_maps = torch.randn((4, 5, 5))  # Example heat maps tensor
     return GlobalHeatMap(Tokenizer(tokenizer), prompt, [heat_maps] * 2)
 
 
@@ -208,8 +208,8 @@ def test_compile_processed_image_default(
         0,
         sample_grid_opts,
     )
-    assert images == [sample_image]
-    assert infotexts == sample_infotexts
+    assert images == []
+    assert infotexts == []
     assert offset == 0
     assert grid_images == []
 
@@ -226,9 +226,9 @@ def test_compile_processed_image_show_images(
         sample_grid_opts,
         show_images=True,
     )
-    assert images == sample_heatmap_images + [sample_image]
-    assert infotexts == sample_infotexts + sample_infotexts
-    assert offset == 4
+    assert images == sample_heatmap_images 
+    assert infotexts == sample_infotexts * len(sample_heatmap_images)
+    assert offset == len(sample_heatmap_images)
     assert grid_images == []
 
 
@@ -244,10 +244,10 @@ def test_compile_processed_image_use_grid(
         sample_grid_opts,
         use_grid=True,
     )
-    assert images == [sample_image]
-    assert infotexts == sample_infotexts
+    assert images == []
+    assert infotexts == []
     assert offset == 0
-    assert len(grid_images) == 2
+    assert len(grid_images) == 1
 
 
 def test_compile_processed_image_use_grid_per_image(
@@ -263,10 +263,10 @@ def test_compile_processed_image_use_grid_per_image(
         use_grid=True,
         grid_per_image=True,
     )
-    assert len(images) == 1
-    assert infotexts == sample_infotexts
+    assert len(images) == 0
+    assert infotexts == []
     assert offset == 0
-    assert len(grid_images) == 2
+    assert len(grid_images) == 1
 
 
 # ADD TO START
