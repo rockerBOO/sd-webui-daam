@@ -29,6 +29,11 @@ markers = [
 	"slow"
 ]
 
+filterwarnings = [
+    # from hugging face
+    'ignore:Pydantic V1 style `@validator` validators are deprecated',
+]
+
 [tool.coverage.run]
 branch = true
 omit = [

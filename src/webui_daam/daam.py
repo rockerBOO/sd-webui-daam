@@ -21,7 +21,7 @@ from modules.processing import (
 from modules.shared import opts
 from transformers.image_transforms import to_pil_image
 
-from webui_daam.log import debug, info, warning, error, log
+import webui_daam.log as log
 from webui_daam.image import (
     create_heatmap_image_overlay,
     compile_processed_image,
@@ -184,9 +184,8 @@ class Script(scripts.Script):
         # Panicing level of unhooking...
         self.try_unhook()
 
-        self.debug("DAAM Process...")
-
-        self.debug(f"attention text {attention_texts}")
+        log.debug("DAAM Process...")
+        log.debug(f"attention text {attention_texts}")
         assert opts.samples_save, (
             "Cannot run Daam script. Enable "
             + "Always save all generated images' setting."
@@ -245,26 +244,26 @@ class Script(scripts.Script):
             )
 
         tokens = self.tokenize(p, escape_prompt(prompt))
-        self.debug(f"DAAM tokens: {tokens}")
+        log.debug(f"DAAM tokens: {tokens}")
         context_size = calc_context_size(len(tokens))
 
         prompt_analyzer = PromptAnalyzer(embedder, prompt)
         self.prompt_analyzer = prompt_analyzer
         context_size = prompt_analyzer.context_size
 
-        self.debug(
+        log.debug(
             f"daam run with context_size={prompt_analyzer.context_size}, "
             + f"token_count={prompt_analyzer.token_count}"
         )
-        self.debug(
+        log.debug(
             f"remade_tokens={prompt_analyzer.tokens}, "
             + f"multipliers={prompt_analyzer.multipliers}"
         )
-        self.debug(
+        log.debug(
             f"hijack_comments={prompt_analyzer.hijack_comments}, "
             + f"used_custom_terms={prompt_analyzer.used_custom_terms}"
         )
-        self.debug(f"fixes={prompt_analyzer.fixes}")
+        log.debug(f"fixes={prompt_analyzer.fixes}")
 
         return context_size
 
@@ -288,12 +287,12 @@ class Script(scripts.Script):
         **kwargs,
     ):
         self.try_unhook()
-        self.debug("Process batch")
+        log.debug("Process batch")
         if not self.is_enabled(attention_texts, enabled):
-            self.debug("not enabled")
+            log.debug("not enabled")
             return
 
-        self.debug("Processing batch...")
+        log.debug("Processing batch...")
 
         styled_prompt = prompts[0]
 
@@ -303,7 +302,7 @@ class Script(scripts.Script):
             item[0] in self.attentions
             for item in self.prompt_analyzer.used_custom_terms
         ):
-            info("Embedding heatmap cannot be shown.")
+            log.info("Embedding heatmap cannot be shown.")
 
         tokenizer = self.get_tokenizer(p)
 
@@ -320,17 +319,17 @@ class Script(scripts.Script):
             batch_size=p.batch_size,
         )
 
-        info("Trace attention heatmaps for prompt: ")
-        info(f"\t{styled_prompt}")
-        info("Attention words: ")
+        log.info("Trace attention heatmaps for prompt: ")
+        log.info(f"\t{styled_prompt}")
+        log.info("Attention words: ")
         for attn in self.attentions:
-            info(f"\t{attn}")
+            log.info(f"\t{attn}")
 
         self.heatmap_blend_alpha = alpha
 
         self.trace.hook()
 
-        # self.set_infotext_fields(p, self.latest_params)
+        # self.set_infotext_fields(p)
 
     def postprocess_batch(
         self,
@@ -350,7 +349,7 @@ class Script(scripts.Script):
         *args,
         **kwargs,
     ):
-        debug("POSTPROCESS BATCH")
+        log.debug("POSTPROCESS BATCH")
         # pprint(kwargs)
 
     def postprocess_batch_list(
@@ -372,7 +371,7 @@ class Script(scripts.Script):
         *args,
         **kwargs,
     ):
-        debug("POSTPROCESS BATCH LIST")
+        log.debug("POSTPROCESS BATCH LIST")
 
         images = pp.images
         batch_number = kwargs["batch_number"]
@@ -401,7 +400,7 @@ class Script(scripts.Script):
         )
 
         for global_heat_map in global_heat_maps:
-            debug(
+            log.debug(
                 f"Global heatmap ({len(global_heat_map.heat_maps)}) "
                 + f"for {global_heat_map.prompts} "
             )
@@ -409,7 +408,7 @@ class Script(scripts.Script):
 
             for image_idx, (image, seed) in enumerate(zip(images, p.seeds)):
                 for attention in self.attentions:
-                    debug(f"batch_idx {image_idx} attention: {attention}")
+                    log.debug(f"batch_idx {image_idx} attention: {attention}")
 
                     img = create_heatmap_image_overlay(
                         global_heat_map,
@@ -433,7 +432,7 @@ class Script(scripts.Script):
                         )
 
                 if len(heatmap_images) / batch_size != len(self.attentions):
-                    info(
+                    log.info(
                         f"Heatmap images ({len(heatmap_images)}) not matching "
                         + f"# of attentions ({len(self.attentions)})"
                     )
@@ -441,7 +440,7 @@ class Script(scripts.Script):
                 self.heatmap_images[seed] = heatmap_images
 
             if len(self.heatmap_images[seed]) == 0:
-                info("DAAM: Did not create any heatmap images.")
+                log.info("DAAM: Did not create any heatmap images.")
 
         self.try_unhook()
 
@@ -465,9 +464,9 @@ class Script(scripts.Script):
         **kwargs,
     ):
         self.try_unhook()
-        debug("Postprocess...")
+        log.debug("Postprocess...")
         if self.is_enabled(attention_texts, enabled) is False:
-            debug("disabled...")
+            log.debug("disabled...")
             return
 
         initial_info = None
@@ -487,23 +486,23 @@ class Script(scripts.Script):
 
         # heatmap_images = self.heatmap_images.keys()
 
-        debug(
+        log.debug(
             "Heatmap images: "
             + f"{[len(hm_imgs) for hm_imgs in self.heatmap_images.values()]} "
             + f"attentions {len(self.attentions)}"
         )
-        debug(f"Images: {len(processed.images)}")
+        log.debug(f"Images: {len(processed.images)}")
 
-        debug(f"processed images: {processed.images}")
+        log.debug(f"processed images: {processed.images}")
 
         for (seed, heatmap_images), img in zip(
             self.heatmap_images.items(), processed.images
         ):
             if processed.seed != seed:
-                debug(f"INVALID SEED processed {processed.seed} {seed}")
-            debug(f"Processing seed {seed} ")
-            debug(f"heatmap_images {heatmap_images}")
-            debug(f"img {img}")
+                log.debug(f"INVALID SEED processed {processed.seed} {seed}")
+            log.debug(f"Processing seed {seed} ")
+            log.debug(f"heatmap_images {heatmap_images}")
+            log.debug(f"img {img}")
 
             (
                 images,
@@ -550,10 +549,10 @@ class Script(scripts.Script):
                         infotexts.append(infotexts[0])
                         offset += 1
 
-            debug(
+            log.debug(
                 f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images_list)}"
             )
-            debug(f"Images {images}")
+            log.debug(f"Images {images}")
             # debug(f"Infotext {infotexts}")
 
             # Add new images to the start of the processed image list
@@ -592,20 +591,8 @@ class Script(scripts.Script):
             except RuntimeError:
                 pass
 
-    def debug(self, message):
-        debug(message)
-
-    def log(self, message):
-        log(message)
-
-    def error(self, err, message):
-        error(err, message)
-
-    def warning(self, err, message):
-        warning(err, message)
-
     def __getattr__(self, attr):
-        warning("unknown call", attr)
+        log.warning("unknown call", attr)
         # import traceback
         #
         # traceback.print_stack()
