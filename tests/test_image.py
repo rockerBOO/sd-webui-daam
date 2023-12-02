@@ -25,9 +25,9 @@ matplotlib.use("Agg")
 def sample_global_heatmap():
     # Sample GlobalHeatMap for testing
     tokenizer = lambda x: x.split()  # Example tokenizer function
-    prompt = "Test prompt word"
+    prompts = ["Test prompt word", "word prompt test"]
     heat_maps = torch.randn((4, 5, 5))  # Example heat maps tensor
-    return GlobalHeatMap(Tokenizer(tokenizer), prompt, [heat_maps] * 2)
+    return GlobalHeatMap(Tokenizer(tokenizer), prompts, [heat_maps] * 2)
 
 
 @pytest.fixture
