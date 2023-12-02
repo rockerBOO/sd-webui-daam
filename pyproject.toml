@@ -9,6 +9,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ["3.10.*", "3.11.*"]
+daam = {git = "https://github.com/rockerBOO/daam"}
 
 [tool.poetry.group.dev.dependencies]
 gradio = "3.41.2"
