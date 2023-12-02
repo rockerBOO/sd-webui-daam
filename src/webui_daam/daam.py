@@ -8,6 +8,7 @@ import open_clip.tokenizer
 import torch
 from daam import trace
 from ldm.modules.encoders.modules import FrozenOpenCLIPEmbedder
+from sgm.modules import GeneralConditioner
 from modules import (
     script_callbacks,
     sd_hijack_clip,
@@ -27,7 +28,7 @@ from webui_daam.image import (
     compile_processed_image,
 )
 from webui_daam.tokenizer import Tokenizer
-from webui_daam.prompt import PromptAnalyzer, calc_context_size, escape_prompt
+from webui_daam.prompt import PromptAnalyzer
 from webui_daam.grid import GridOpts, GRID_LAYOUT_AUTO
 from webui_daam.heatmap import calc_global_heatmap
 
@@ -218,17 +219,14 @@ class Script(scripts.Script):
         ):
             return Tokenizer(open_clip.tokenizer._tokenizer.encode)
 
+        if isinstance(p.sd_model.cond_stage_model.weapped, GeneralConditioner):
+            return Tokenizer(p.sd_model.cond_stage_model.wrapped)
+
         return Tokenizer(
             p.sd_model.cond_stage_model.wrapped.tokenizer.tokenize
         )
 
-    def tokenize(self, p, prompt):
-        tokenizer = self.get_tokenizer(p)
-
-        return tokenizer.tokenize(prompt)
-
     def get_context_size(self, p: StableDiffusionProcessing, prompt: str):
-        embedder = None
         if isinstance(
             p.sd_model.cond_stage_model,
             sd_hijack_clip.FrozenCLIPEmbedderWithCustomWords,
@@ -236,36 +234,24 @@ class Script(scripts.Script):
             p.sd_model.cond_stage_model,
             sd_hijack_open_clip.FrozenOpenCLIPEmbedderWithCustomWords,
         ):
-            embedder = p.sd_model.cond_stage_model
+            embedders = [p.sd_model.cond_stage_model]
+        elif isinstance(p.sd_model.cond_stage_model, GeneralConditioner):
+            embedders = p.sd_model.cond_stage_model.embedders
         else:
             assert False, (
                 f"Embedder '{type(p.sd_model.cond_stage_model)}' "
                 + "is not supported."
             )
 
-        tokens = self.tokenize(p, escape_prompt(prompt))
-        log.debug(f"DAAM tokens: {tokens}")
-        context_size = calc_context_size(len(tokens))
-
-        prompt_analyzer = PromptAnalyzer(embedder, prompt)
+        prompt_analyzer = PromptAnalyzer(embedders, prompt)
         self.prompt_analyzer = prompt_analyzer
-        context_size = prompt_analyzer.context_size
 
         log.debug(
             f"daam run with context_size={prompt_analyzer.context_size}, "
             + f"token_count={prompt_analyzer.token_count}"
         )
-        log.debug(
-            f"remade_tokens={prompt_analyzer.tokens}, "
-            + f"multipliers={prompt_analyzer.multipliers}"
-        )
-        log.debug(
-            f"hijack_comments={prompt_analyzer.hijack_comments}, "
-            + f"used_custom_terms={prompt_analyzer.used_custom_terms}"
-        )
-        log.debug(f"fixes={prompt_analyzer.fixes}")
 
-        return context_size
+        return prompt_analyzer.context_size
 
     @torch.no_grad()
     def process_batch(
@@ -298,11 +284,11 @@ class Script(scripts.Script):
 
         context_size = self.get_context_size(p, styled_prompt)
 
-        if any(
-            item[0] in self.attentions
-            for item in self.prompt_analyzer.used_custom_terms
-        ):
-            log.info("Embedding heatmap cannot be shown.")
+        # if any(
+        #     item[0] in self.attentions
+        #     for item in self.prompt_analyzer.used_custom_terms
+        # ):
+        #     log.info("Embedding heatmap cannot be shown.")
 
         # tokenizer = self.get_tokenizer(p)
 
@@ -374,7 +360,7 @@ class Script(scripts.Script):
         log.debug("POSTPROCESS BATCH LIST")
 
         images = pp.images
-        batch_number = kwargs["batch_number"]
+        # batch_number = kwargs["batch_number"]
 
         batch_size = p.batch_size
 
@@ -550,7 +536,8 @@ class Script(scripts.Script):
                         offset += 1
 
             log.debug(
-                f"Images: {len(images)} Infotext: {len(infotexts)} Offset: {offset} Grid images: {len(grid_images_list)}"
+                f"Images: {len(images)} Infotext: {len(infotexts)} "
+                + f"Offset: {offset} Grid images: {len(grid_images_list)}"
             )
             log.debug(f"Images {images}")
             # debug(f"Infotext {infotexts}")
