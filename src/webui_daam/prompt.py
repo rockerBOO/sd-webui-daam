@@ -1,7 +1,10 @@
 import re
 from itertools import chain
+from typing import List, Self, Tuple, TypeVar, Union
+
 from modules.sd_hijack_clip import (
     FrozenCLIPEmbedderWithCustomWordsBase,
+    PromptChunk,
 )
 from modules.sd_hijack_open_clip import FrozenOpenCLIPEmbedderWithCustomWords
 from modules.shared import opts
@@ -12,7 +15,10 @@ def calc_context_size(token_length: int):
     return ((int)(len_check // 75) + 1) * 77
 
 
-def escape_prompt(prompt):
+Prompts = TypeVar("Prompts", List[str], str)
+
+
+def escape_prompt(prompt: Prompts) -> Prompts:
     if isinstance(prompt, str):
         prompt = prompt.lower()
         prompt = re.sub(r"[\(\)\[\]]", "", prompt)
@@ -25,8 +31,18 @@ def escape_prompt(prompt):
         return prompt_new
 
 
+TPromptAnalyzer = TypeVar("TPromptAnalyzer", bound="PromptAnalyzer")
+
+
 class PromptAnalyzer:
-    def __init__(self, clip: FrozenCLIPEmbedderWithCustomWordsBase, text: str):
+    def __init__(
+        self,
+        clip: Union[
+            FrozenCLIPEmbedderWithCustomWordsBase,
+            FrozenOpenCLIPEmbedderWithCustomWords,
+        ],
+        text: str,
+    ):
         use_old = opts.use_old_emphasis_implementation
         assert not use_old, "use_old_emphasis_implementation is not supported"
 
@@ -62,14 +78,17 @@ class PromptAnalyzer:
                 [1.0] + multipliers[i * 75 : i * 75 + 75] + [1.0]
             )
 
-    def create(self, text: str):
+    def create(self: Self, text: str) -> TPromptAnalyzer:
         return PromptAnalyzer(self.clip, text)
 
-    def tokenize_line(self, line):
+    def tokenize_line(self, line) -> Tuple[PromptChunk, int]:
         chunks, token_count = self.clip.tokenize_line(line)
         return chunks, token_count
 
-    def process_text(self, texts):
+    def tokenize(self, prompts):
+        return self.clip.tokenize(prompts)
+
+    def process_text(self, texts: List[str]):
         (
             batch_multipliers,
             remade_batch_tokens,
@@ -90,7 +109,9 @@ class PromptAnalyzer:
     def encode(self, text: str):
         return self.clip.tokenize([text])[0]
 
-    def calc_word_indecies(self, word: str, limit: int = -1, start_pos=0):
+    def calc_word_indecies(
+        self, word: str, limit: int = -1, start_pos=0
+    ) -> Tuple[List[int], int]:
         word = word.lower()
         merge_idxs = []
 

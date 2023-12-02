@@ -35,7 +35,7 @@ def check_daam():
     if hasattr(daam, "_version"):
         version = daam.__version__.split(".")
         version = (int(version[0]), int(version[1]), int(version[2]))
-        return version >= (0, 1, 1)
+        return version >= (0, 2, 0)
     return False
 
 

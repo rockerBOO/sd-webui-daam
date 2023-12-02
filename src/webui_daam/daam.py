@@ -304,13 +304,13 @@ class Script(scripts.Script):
         ):
             log.info("Embedding heatmap cannot be shown.")
 
-        tokenizer = self.get_tokenizer(p)
+        # tokenizer = self.get_tokenizer(p)
 
         self.trace = trace(
             unet=p.sd_model.model.diffusion_model,
             vae=p.sd_model.first_stage_model,
             vae_scale_factor=8,
-            tokenizer=tokenizer,
+            tokenizer=self.prompt_analyzer,
             width=p.width,
             height=p.height,
             context_size=context_size,

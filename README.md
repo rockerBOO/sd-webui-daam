@@ -41,8 +41,12 @@ attention text: "woman, sunglasses, old fashioned jukebox"
 
 ## Known issues
 
-- Batch size works but isn't lining up with the right areas. 
+- Batch size works but isn't lining up with the right areas.
 - Grids may have different images mixed together, especially bad in combo with batches.
+
+## Changelog
+
+2023-12-02 — SDXL now supported
 
 ## Development
 
@@ -52,3 +56,10 @@ Tests using [pytest](https://pytest.org).
 ## Contributions
 
 Issues and PRs welcome.
+
+## Credits
+
+@IAMAl — https://github.com/IAMAl — For support in making the attention heatmaps work at different aspect ratios and overall supporting me.
+@kousw — https://github.com/kousw/stable-diffusion-webui-daam — For creating the initial extension
+@toriato — https://github.com/toriato/stable-diffusion-webui-daam — For adapting for aspect ratio and batch sizes
+@castorini — https://github.com/castorini/daam — For creating the DAAM attention heatmapping library
