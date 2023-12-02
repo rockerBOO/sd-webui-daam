@@ -23,7 +23,7 @@ class Opts:
 
 
 def plot_overlay_heat_map(
-    im: Image.Image,
+    im: Union[Image.Image, torch.Tensor],
     heat_map: torch.Tensor,
     word: Union[None, str] = None,
     out_file=None,
@@ -38,8 +38,17 @@ def plot_overlay_heat_map(
     header_size = 40
     scale = 1.1
 
-    width = math.ceil((im.size[0] / dpi) * scale)
-    height = math.ceil(((im.size[1] + header_size) / dpi) * scale)
+    if isinstance(im, Image.Image):
+        w = im.size[0]
+        h = im.size[1]
+    elif isinstance(im, torch.Tensor):
+        w = im.size(2)
+        h = im.size(1)
+    else:
+        raise RuntimeError("Invalid image")
+
+    width = math.ceil((w / dpi) * scale)
+    height = math.ceil(((h + header_size) / dpi) * scale)
 
     if ax is None:
         plt.clf()
@@ -47,14 +56,12 @@ def plot_overlay_heat_map(
     else:
         plt_ = ax
 
-    im = np.array(im)
-
     heat_map = heat_map.permute(1, 0)  # swap width/height to match numpy array
     # shape height, width
 
-    if crop is not None:
-        heat_map = heat_map[crop:-crop, crop:-crop]
-        im = im[crop:-crop, crop:-crop]
+    # if crop is not None:
+    #     heat_map = heat_map[crop:-crop, crop:-crop]
+    #     im = im[crop:-crop, crop:-crop]
 
     if color_normalize:
         plt_.imshow(heat_map.cpu().numpy(), cmap="jet")
@@ -62,7 +69,16 @@ def plot_overlay_heat_map(
         heat_map = heat_map.clamp_(min=0, max=1)
         plt_.imshow(heat_map.cpu().numpy(), cmap="jet", vmin=0.0, vmax=1.0)
 
-    im = torch.from_numpy(im).float() / 255
+    if isinstance(im, Image.Image):
+        im = np.array(im)
+        im = torch.from_numpy(im).float() / 255
+    elif isinstance(im, torch.Tensor):
+        im = im.permute(1, 2, 0)
+
+    # we are getting a 2 dimensional image. maybe not a good thing to do here.
+    # if len(im) == 2:
+    #     im = im.unsqueeze(-1)
+
     im = torch.cat((im, (1 - (heat_map.unsqueeze(-1) * alpha))), dim=-1)
 
     plt_.imshow(im)
@@ -95,7 +111,7 @@ def plot_overlay_heat_map(
 def create_heatmap_image_overlay(
     heatmap: GlobalHeatMap,
     attention_word: str,
-    image: Image.Image,
+    image: Union[Image.Image, torch.Tensor],
     show_word=True,
     alpha=1.0,
     batch_idx=0,
@@ -126,8 +142,17 @@ def create_plot_for_img(img, opts):
     header_size = 40
     scale = 1.1
 
-    width = math.ceil((img.size[0] / dpi) * scale)
-    height = math.ceil(((img.size[1] + header_size) / dpi) * scale)
+    if isinstance(img, Image.Image):
+        w = img.size[0]
+        h = img.size[1]
+    elif isinstance(img, torch.Tensor):
+        w = img.size(0)
+        h = img.size(1)
+    else:
+        raise RuntimeError("Invalid image")
+
+    width = math.ceil((w / dpi) * scale)
+    height = math.ceil(((h + header_size) / dpi) * scale)
 
     plt.tight_layout()
     plt.rcParams.update(

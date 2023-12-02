@@ -387,12 +387,78 @@ class Script(scripts.Script):
         *args,
         **kwargs,
     ):
-        debug(
-            "POSTPROCESS BATCH LIST",
+        debug("POSTPROCESS BATCH LIST")
+
+        images = pp.images
+        batch_number = kwargs["batch_number"]
+
+        batch_size = p.batch_size
+
+        # Batch count number
+        # n_iter = p.n_iter
+
+        # Iteration number of the batch count (of n_iter)
+        # iteration = p.iteration
+
+        # seed of the image we are currently processing
+        # seed = p.seeds[p.batch_index]
+
+        # Num input/output blocks for tracing the layers
+        num_input_blocks = len(p.sd_model.model.diffusion_model.input_blocks)
+        num_output_blocks = len(p.sd_model.model.diffusion_model.output_blocks)
+
+        global_heat_maps = calc_global_heatmap(
+            self.trace,
+            p.prompts,  # TODO: we should be getting the right prompt here
+            trace_each_layer=self.trace_each_layers,
+            num_input_blocks=num_input_blocks,
+            num_output_blocks=num_output_blocks,
         )
-        # pprint(args)
-        # pprint(kwargs)
-        # pprint(vars(pp))
+
+        for global_heat_map in global_heat_maps:
+            debug(
+                f"Global heatmap ({len(global_heat_map.heat_maps)}) "
+                + f"for {global_heat_map.prompts} "
+            )
+            heatmap_images = []
+
+            for image_idx, (image, seed) in enumerate(zip(images, p.seeds)):
+                for attention in self.attentions:
+                    debug(f"batch_idx {image_idx} attention: {attention}")
+
+                    img = create_heatmap_image_overlay(
+                        global_heat_map,
+                        attention,
+                        image=image,
+                        show_word=self.show_caption,
+                        alpha=self.heatmap_blend_alpha,
+                        batch_idx=image_idx,
+                        opts=opts,
+                    )
+
+                    heatmap_images.append(img)
+
+                    if self.save_images:
+                        save_image(
+                            img,
+                            p.outpath_samples,
+                            "daam",
+                            grid=False,
+                            p=p,
+                        )
+
+                if len(heatmap_images) / batch_size != len(self.attentions):
+                    info(
+                        f"Heatmap images ({len(heatmap_images)}) not matching "
+                        + f"# of attentions ({len(self.attentions)})"
+                    )
+
+                self.heatmap_images[seed] = heatmap_images
+
+            if len(self.heatmap_images[seed]) == 0:
+                info("DAAM: Did not create any heatmap images.")
+
+        self.try_unhook()
 
     @torch.no_grad()
     def postprocess(
@@ -695,27 +761,27 @@ class Script(scripts.Script):
 
 def calc_global_heatmap(
     trace,
-    prompt,
+    prompts,
     num_input_blocks,
     num_output_blocks,
     trace_each_layer=False,
 ):
     try:
         debug("Global heatmap using prompt:")
-        debug(f"prompt: {prompt}")
+        debug(f"prompt: {prompts}")
         if trace_each_layer:
             global_heatmaps = [
-                trace.compute_global_heat_map(prompt, layer_idx=layer_idx)
+                trace.compute_global_heat_map(prompts, layer_idx=layer_idx)
                 for layer_idx in range(
                     num_input_blocks + 1 + num_output_blocks
                 )
             ]
         else:
-            global_heatmaps = [trace.compute_global_heat_map(prompt)]
+            global_heatmaps = [trace.compute_global_heat_map(prompts)]
     except RuntimeError as err:
         warning(
             err,
-            "DAAM: Failed to get computed global heatmap for " + f" {prompt}",
+            "DAAM: Failed to get computed global heatmap for " + f" {prompts}",
         )
         return []
 
@@ -783,7 +849,7 @@ def on_infotext_pasted(infotext, params):
     #     )
 
 
-script_callbacks.on_before_image_saved(on_before_image_saved)
+# script_callbacks.on_before_image_saved(on_before_image_saved)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
 
 
