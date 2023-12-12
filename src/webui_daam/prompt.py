@@ -1,5 +1,5 @@
 import re
-from typing import List, Self, Tuple, TypeVar, Union
+from typing import List, Tuple, TypeVar, Union
 
 from modules.sd_hijack_clip import (
     FrozenCLIPEmbedderWithCustomWordsBase,
@@ -60,7 +60,7 @@ class PromptAnalyzer:
         self.context_size = calc_context_size(token_count)
         self.token_count = token_count
 
-    def create(self: Self, text: str) -> TPromptAnalyzer:
+    def create(self, text: str) -> TPromptAnalyzer:
         return PromptAnalyzer(self.conditioner, text)
 
     def tokenize_line(self, line) -> Tuple[PromptChunk, int]:
