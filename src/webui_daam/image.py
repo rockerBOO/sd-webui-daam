@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import matplotlib
@@ -9,17 +9,17 @@ import torch
 from daam.heatmap import GlobalHeatMap
 from PIL import Image
 
-from webui_daam.grid import GRID_LAYOUT_AUTO, GridOpts, make_grid
+from webui_daam.grid import GridOpts, make_grid
 
-from .log import debug, warning
+from .log import warning
 
 matplotlib.use("Agg")
 
 
-@dataclass
-class Opts:
-    grid_background_color: str = "white"
-    grid_text_active_color: str = "black"
+# @dataclass
+# class Opts:
+#     grid_background_color: str = "white"
+#     grid_text_active_color: str = "black"
 
 
 def plot_overlay_heat_map(
@@ -31,9 +31,8 @@ def plot_overlay_heat_map(
     color_normalize: bool = True,
     ax: Optional[plt.Axes] = None,
     alpha: Optional[float] = 1.0,
-    opts: Optional[Opts] = None,
+    opts=None,
 ):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, )lt.Axes) -> None
     dpi = 100
     header_size = 40
     scale = 1.1
