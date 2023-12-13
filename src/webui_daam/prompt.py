@@ -3,12 +3,10 @@ from typing import List, Tuple, TypeVar, Union
 
 from modules.sd_hijack_clip import (
     FrozenCLIPEmbedderWithCustomWordsBase,
-    FrozenCLIPEmbedderForSDXLWithCustomWords,
     PromptChunk,
 )
 from modules.sd_hijack_open_clip import (
     FrozenOpenCLIPEmbedderWithCustomWords,
-    FrozenOpenCLIPEmbedder2WithCustomWords,
 )
 from modules.shared import opts
 
@@ -44,8 +42,6 @@ class PromptAnalyzer:
             Union[
                 FrozenCLIPEmbedderWithCustomWordsBase,
                 FrozenOpenCLIPEmbedderWithCustomWords,
-                FrozenCLIPEmbedderForSDXLWithCustomWords,
-                FrozenOpenCLIPEmbedder2WithCustomWords,
             ]
         ],
         text: str,

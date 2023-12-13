@@ -8,7 +8,6 @@ import open_clip.tokenizer
 import torch
 from daam import trace
 from ldm.modules.encoders.modules import FrozenOpenCLIPEmbedder
-from sgm.modules import GeneralConditioner
 from modules import (
     script_callbacks,
     sd_hijack_clip,
@@ -235,13 +234,16 @@ class Script(scripts.Script):
             sd_hijack_open_clip.FrozenOpenCLIPEmbedderWithCustomWords,
         ):
             embedders = [p.sd_model.cond_stage_model]
-        elif isinstance(p.sd_model.cond_stage_model, GeneralConditioner):
-            embedders = p.sd_model.cond_stage_model.embedders
-        else:
-            assert False, (
-                f"Embedder '{type(p.sd_model.cond_stage_model)}' "
-                + "is not supported."
-            )
+        else: 
+            try:
+                from sgm.modules import GeneralConditioner
+                if isinstance(p.sd_model.cond_stage_model, GeneralConditioner):
+                    embedders = p.sd_model.cond_stage_model.embedders
+            except ModuleNotFoundError:
+                assert False, (
+                    f"Embedder '{type(p.sd_model.cond_stage_model)}' "
+                    + "is not supported."
+                )
 
         prompt_analyzer = PromptAnalyzer(embedders, prompt)
         self.prompt_analyzer = prompt_analyzer

@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import matplotlib
@@ -9,17 +9,17 @@ import torch
 from daam.heatmap import GlobalHeatMap
 from PIL import Image
 
-from webui_daam.grid import GRID_LAYOUT_AUTO, GridOpts, make_grid
+from webui_daam.grid import GridOpts, make_grid
 
-from .log import debug, warning
+from .log import warning
 
 matplotlib.use("Agg")
 
 
-@dataclass
-class Opts:
-    grid_background_color: str = "white"
-    grid_text_active_color: str = "black"
+# @dataclass
+# class Opts:
+#     grid_background_color: str = "white"
+#     grid_text_active_color: str = "black"
 
 
 def plot_overlay_heat_map(
@@ -31,9 +31,8 @@ def plot_overlay_heat_map(
     color_normalize: bool = True,
     ax: Optional[plt.Axes] = None,
     alpha: Optional[float] = 1.0,
-    opts: Optional[Opts] = None,
+    opts=None,
 ):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
     dpi = 100
     header_size = 40
     scale = 1.1
@@ -88,7 +87,7 @@ def plot_overlay_heat_map(
 
     if ax is None:
         plt_.gcf().set(
-            facecolor=opts.grid_background_color
+            facecolor=get_opt(opts, "grid_background_color", "#FFF")
             if opts is not None
             else "#fff",
             figwidth=width,
@@ -177,13 +176,24 @@ def create_plot_for_img(img, opts):
     if opts is not None:
         plt.rcParams.update(
             {
-                "text.color": opts.grid_text_active_color,
-                "axes.labelcolor": opts.grid_background_color,
-                "figure.facecolor": opts.grid_background_color,
+                "text.color": get_opt(opts, "grid_text_active_color", "#000"),
+                "axes.labelcolor": get_opt(
+                    opts, "grid_background_color", "#FFF"
+                ),
+                "figure.facecolor": get_opt(
+                    opts, "grid_background_color", "#FFF"
+                ),
             }
         )
 
     return plt
+
+
+def get_opt(opts, opt, default):
+    if hasattr(opts, opt):
+        return opts[opt]
+
+    return default
 
 
 # Get the PIL image from a plot figure or the current plot

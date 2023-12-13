@@ -12,7 +12,6 @@ from webui_daam.image import (
     create_heatmap_image_overlay,
     compile_processed_image,
     add_to_start,
-    Opts,
 )
 from webui_daam.grid import GridOpts, GRID_LAYOUT_AUTO
 
@@ -24,7 +23,9 @@ matplotlib.use("Agg")
 @pytest.fixture
 def sample_global_heatmap():
     # Sample GlobalHeatMap for testing
-    tokenizer = lambda x: x.split()  # Example tokenizer function
+    def tokenizer(x):
+        return x.split()
+
     prompts = ["Test prompt word", "word prompt test"]
     heat_maps = torch.randn((4, 5, 5))  # Example heat maps tensor
     return GlobalHeatMap(Tokenizer(tokenizer), prompts, [heat_maps] * 2)
@@ -162,7 +163,6 @@ def test_opts_parameter(sample_global_heatmap, sample_image):
         sample_global_heatmap,
         "word",
         sample_image,
-        opts=Opts(),
     )
 
     assert isinstance(img, Image.Image)
@@ -226,7 +226,7 @@ def test_compile_processed_image_show_images(
         sample_grid_opts,
         show_images=True,
     )
-    assert images == sample_heatmap_images 
+    assert images == sample_heatmap_images
     assert infotexts == sample_infotexts * len(sample_heatmap_images)
     assert offset == len(sample_heatmap_images)
     assert grid_images == []
