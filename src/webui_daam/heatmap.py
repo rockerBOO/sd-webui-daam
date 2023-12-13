@@ -12,6 +12,7 @@ def calc_global_heatmap(
     num_output_blocks: int,
     trace_each_layer=False,
 ) -> List[GlobalHeatMap]:
+    assert trace is not None
     try:
         debug("Global heatmap using prompt:")
         debug(f"prompt: {prompts}")

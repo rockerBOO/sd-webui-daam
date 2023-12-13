@@ -357,6 +357,11 @@ class Script(scripts.Script):
         *args,
         **kwargs,
     ):
+        log.debug("Postprocess...")
+        if self.is_enabled(attention_texts, enabled) is False:
+            log.debug("disabled...")
+            return
+
         log.debug("POSTPROCESS BATCH LIST")
 
         images = pp.images
@@ -376,6 +381,7 @@ class Script(scripts.Script):
         # Num input/output blocks for tracing the layers
         num_input_blocks = len(p.sd_model.model.diffusion_model.input_blocks)
         num_output_blocks = len(p.sd_model.model.diffusion_model.output_blocks)
+
 
         global_heat_maps = calc_global_heatmap(
             self.trace,
