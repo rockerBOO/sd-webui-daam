@@ -192,7 +192,7 @@ def create_plot_for_img(img, opts):
 
 def get_opt(opts, opt, default):
     if hasattr(opts, opt):
-        return opts.get(opt)
+        return opts[opt]
 
     return default
 
