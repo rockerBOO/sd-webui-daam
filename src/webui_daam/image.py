@@ -33,7 +33,7 @@ def plot_overlay_heat_map(
     alpha: Optional[float] = 1.0,
     opts: Optional[Opts] = None,
 ):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, plt.Axes) -> None
+    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool, )lt.Axes) -> None
     dpi = 100
     header_size = 40
     scale = 1.1
@@ -88,7 +88,7 @@ def plot_overlay_heat_map(
 
     if ax is None:
         plt_.gcf().set(
-            facecolor=opts.grid_background_color
+            facecolor=get_opt(opts, "grid_background_color", "#FFF")
             if opts is not None
             else "#fff",
             figwidth=width,
@@ -177,13 +177,24 @@ def create_plot_for_img(img, opts):
     if opts is not None:
         plt.rcParams.update(
             {
-                "text.color": opts.grid_text_active_color,
-                "axes.labelcolor": opts.grid_background_color,
-                "figure.facecolor": opts.grid_background_color,
+                "text.color": get_opt(opts, "grid_text_active_color", "#000"),
+                "axes.labelcolor": get_opt(
+                    opts, "grid_background_color", "#FFF"
+                ),
+                "figure.facecolor": get_opt(
+                    opts, "grid_background_color", "#FFF"
+                ),
             }
         )
 
     return plt
+
+
+def get_opt(opts, opt, default):
+    if hasattr(opts, opt):
+        return opts.get(opt)
+
+    return default
 
 
 # Get the PIL image from a plot figure or the current plot
