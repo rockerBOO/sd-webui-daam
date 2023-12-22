@@ -191,7 +191,10 @@ def create_plot_for_img(img, opts):
 
 def get_opt(opts, opt, default):
     if hasattr(opts, opt):
-        return opts[opt]
+        try:
+            return opts[opt]
+        except TypeError:
+            return opts.__getattr__(opt)
 
     return default
 
