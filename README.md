@@ -41,6 +41,7 @@ attention text: "woman, sunglasses, old fashioned jukebox"
 
 ## Known issues
 
+- Automatic1111 1.7 is not working properly. Something changed and trying to identify the issue. 
 - Batch size works but isn't lining up with the right areas.
 - Grids may have different images mixed together, especially bad in combo with batches.
 - Certain resolutions may result in a `view of [16, 29, 39]` not working. Try changing the resolution. Please feel free to make a ticket with the error and resolution you were trying.
