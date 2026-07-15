@@ -12,7 +12,7 @@ python = ["3.10.*", "3.11.*"]
 daam = {git = "https://github.com/rockerBOO/daam"}
 
 [tool.poetry.group.dev.dependencies]
-gradio = "3.41.2"
+gradio = "6.15.1"
 numpy = "^1.26.2"
 
 [tool.ruff]
